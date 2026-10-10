@@ -45,6 +45,14 @@ export const AREA_SUGGESTIONS = [
     "Santana Row",
     "Downtown San Jose",
 ];
+export const VIEWS = ["home", "join", "feed", "compare", "group", "setup", "results", "feedback"];
+export const COMMUTE_DESTINATIONS = [
+    { id: "mv-caltrain", label: "Mountain View Caltrain station" },
+    { id: "other", label: "Other destination" },
+];
+export const DEMO_SCORE_NOTE = "Demo group score uses known sample rent, sample commute, and bedrooms only. Missing facts add nothing. It is not a vote count and not an AI recommendation.";
+export const PREFERENCE_SCORE_NOTE = "Group score uses this browser's saved search priorities. Missing facts earn no points. It is not a vote count and not an AI recommendation.";
+export const BEST_VALUE_NOTE = "Best value means the lowest known total rent in the current results. Unknown rent is never best value.";
 export function emptyState() {
     return {
         area: "",
@@ -59,6 +67,10 @@ export function emptyState() {
         useful: [],
         generalFeedback: "",
         view: "setup",
+        theme: "light",
+        groups: [],
+        activeGroupId: null,
+        activeMemberId: null,
     };
 }
 export function isPriorityId(value) {
@@ -117,11 +129,11 @@ export function yesNoUnknown(value) {
         return "Yes";
     if (value === false)
         return "No";
-    return "Unknown";
+    return "Not listed";
 }
 export function leaseFact(months) {
     if (months == null)
-        return "Unknown";
+        return "Not listed";
     if (months <= LEASE_FLEX_MAX_MONTHS)
         return `${months} months (flexible: six months or less)`;
     return `${months} months (not flexible)`;

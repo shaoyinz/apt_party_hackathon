@@ -1,3 +1,4 @@
+import { sanitizeGroups } from "./groups";
 import { emptyState, isPriorityId, isTravelMode } from "./model";
 export const STORAGE_KEY = "roost-prototype-v1";
 const INVALID_WARNING = "Saved search data in this browser was unreadable, so Roost started fresh. New changes can still be saved here.";
@@ -17,7 +18,7 @@ export function loadState(store) {
     const parsed = parseState(raw);
     if (!parsed)
         return { state: emptyState(), warning: INVALID_WARNING };
-    return { state: parsed, warning: null };
+    return parsed;
 }
 export function saveState(store, state) {
     if (!store)
@@ -75,19 +76,27 @@ function parseState(raw) {
         const useful = parseUseful(record.useful);
         if (!priorities || !useful)
             return null;
+        const groups = sanitizeGroups(record.groups);
         return {
-            area: record.area,
-            mode: mode,
-            householdSize,
-            budgetText: record.budgetText,
-            priorities,
-            destination: typeof record.destination === "string" ? record.destination : "",
-            travelMode: isTravelMode(record.travelMode) ? record.travelMode : "driving",
-            transitDeparture: typeof record.transitDeparture === "string" ? record.transitDeparture : "",
-            confirmedDestination: parseConfirmed(record.confirmedDestination),
-            useful,
-            generalFeedback: record.generalFeedback,
-            view,
+            state: {
+                area: record.area,
+                mode: mode,
+                householdSize,
+                budgetText: record.budgetText,
+                priorities,
+                destination: typeof record.destination === "string" ? record.destination : "",
+                travelMode: isTravelMode(record.travelMode) ? record.travelMode : "driving",
+                transitDeparture: typeof record.transitDeparture === "string" ? record.transitDeparture : "",
+                confirmedDestination: parseConfirmed(record.confirmedDestination),
+                useful,
+                generalFeedback: record.generalFeedback,
+                view,
+                theme: record.theme === "dark" ? "dark" : "light",
+                groups: groups.groups,
+                activeGroupId: typeof record.activeGroupId === "string" ? record.activeGroupId : null,
+                activeMemberId: typeof record.activeMemberId === "string" ? record.activeMemberId : null,
+            },
+            warning: groups.ok ? null : "Saved group data in this browser was unreadable, so group activity started fresh. Your saved search was kept.",
         };
     }
     catch {

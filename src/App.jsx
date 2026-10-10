@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
+import { GroupDemo } from "./groupDemo";
 import { ImportFlow } from "./ImportFlow";
 import { loadImports, openImportSession } from "./importApi";
 import { toSearchListing } from "./import/searchShape";
@@ -24,11 +25,22 @@ const [catalog, setCatalog] = useState(null);
     const [dataStatus, setDataStatus] = useState("loading");
     const [importOpen, setImportOpen] = useState(false);
     const [userListings, setUserListings] = useState([]);
+    const [route, setRoute] = useState(() => readRoute());
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
             setWarning(next);
     }, [state]);
+    useEffect(() => {
+        const apply = () => setRoute(readRoute());
+        window.addEventListener("hashchange", apply);
+        return () => window.removeEventListener("hashchange", apply);
+    }, []);
+    useEffect(() => {
+        const meta = ensureRobots();
+        const privateView = route.kind === "join" || route.kind === "feed" || route.kind === "compare" || route.kind === "group" || route.kind === "home";
+        meta.content = privateView ? "noindex, nofollow" : "index, follow";
+    }, [route]);
     useEffect(() => {
 let cancelled = false;
         void loadCatalog().then((next) => {
@@ -166,46 +178,60 @@ const imported = catalog?.listings ?? [];
         }
     }
     function reset() {
-        if (!window.confirm("Reset this browser's saved search, useful listings, and feedback?"))
+        if (!window.confirm("Reset this browser's saved search, group demo, useful listings, and feedback?"))
             return;
         const nextWarning = clearState(store);
         setState(emptyState());
         setErrors({});
         setSubmitted(false);
         setWarning(nextWarning);
+        window.location.hash = "/";
     }
-    return (<div className="page">
+    function replaceGroup(group, extra = {}) {
+        setState((current) => ({
+            ...current,
+            ...extra,
+            groups: current.groups.map((item) => item.id === group.id ? group : item),
+            activeGroupId: group.id,
+            activeMemberId: extra.activeMemberId ?? current.activeMemberId,
+        }));
+    }
+    const groupView = route.kind !== "search";
+    return (<div className={groupView ? "page wide" : "page"}>
       <header className="mast">
         <p className="stamp">{catalog && imported.length > 0 ? "Imported + sample" : "Sample data"}</p>
         <div>
           <p className="eyebrow">South Bay scratch prototype</p>
           <h1>Roost</h1>
         </div>
+        <a className="btn" href="#/groups">Groups</a>
       </header>
-      <p className="local-note" role="status">
+      {groupView ? null : <p className="local-note" role="status">
          {dataStatus === "database"
          ? "Displaying synthetic sample listings loaded from Supabase."
           : dataStatus === "loading"
             ? "Loading Supabase demo listings."
             : "Supabase unavailable; using local sample fixtures."}
-      </p>
+      </p>}
       <p className="banner" role="note">
         {importBanner(catalog, catalogError, refreshing)} Calculating commute or convenience sends
         destination and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity
         services. Transit times are scheduled estimates, not live delays or fares. Nothing is sent
         to the team unless you share an export yourself.
       </p>
-      <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>
-      {warning ? (<p className="warning" role="status">
+      {groupView ? null : <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>}
+      {groupView ? null : (warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
-        </p>) : (        <p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>)}
+        </p>) : (<p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>))}
 
-{importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
+      {groupView ? <div className="demo-app" data-theme={state.theme === "dark" ? "dark" : "light"}>
+        <GroupDemo state={state} warning={warning} route={route} listings={listings} onPatch={update} onReplaceGroup={replaceGroup} onReset={reset}/>
+      </div> : importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
             setUserListings((rows || []).map(toSearchListing));
             setImportOpen(false);
         }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
 
-      <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
+      {groupView ? null : <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>}
       <p className="attribution">
         Routing, geocoding, and amenity data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.
         Transit schedules: VTA and Caltrain GTFS. Driving estimates do not include live traffic.
@@ -763,6 +789,27 @@ async function loadCatalog(refresh = false) {
     if (!response.ok)
         throw new Error("catalog request failed");
     return response.json();
+}
+function readRoute() {
+    const hash = window.location.hash.replace(/^#/, "");
+    const join = hash.match(/^\/join\/([^/]+)$/);
+    if (join)
+        return { kind: "join", token: decodeURIComponent(join[1]) };
+    const scoped = hash.match(/^\/g\/([^/]+)\/(feed|compare|group)$/);
+    if (scoped)
+        return { kind: scoped[2], groupId: decodeURIComponent(scoped[1]) };
+    if (hash === "/groups")
+        return { kind: "home" };
+    return { kind: "search" };
+}
+function ensureRobots() {
+    let meta = document.querySelector('meta[name="robots"]');
+    if (!meta) {
+        meta = document.createElement("meta");
+        meta.setAttribute("name", "robots");
+        document.head.appendChild(meta);
+    }
+    return meta;
 }
 function downloadJson(json) {
     const blob = new Blob([json + "\n"], { type: "application/json" });
