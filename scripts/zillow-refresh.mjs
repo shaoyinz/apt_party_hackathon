@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPgSaleStore, cronExpression, DEFAULT_SEARCH_URL, runRefresh, scheduleIsActive } from "../server/zillowCache.js";
+import { configuredZillowSources } from "../server/zillowCachePlugin.js";
+import { createPgSaleStore, cronExpression, runRefresh, scheduleIsActive } from "../server/zillowCache.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scraper = path.join(root, "scripts", "zillow_scraper.py");
@@ -71,7 +72,7 @@ async function main() {
         process.exitCode = 1;
         return;
     }
-    const urls = (process.env.ZILLOW_SEARCH_URLS || DEFAULT_SEARCH_URL).split(",").map((item) => item.trim()).filter(Boolean);
+    const urls = configuredZillowSources().map((source) => source.url);
     const timeout = bounded(process.env.ZILLOW_REFRESH_TIMEOUT, 20, 1, 60);
     const limit = bounded(process.env.ZILLOW_REFRESH_LIMIT, 40, 1, 100);
     const provider = process.env.ZILLOW_REFRESH_PROVIDER === "scrapingdog" ? "scrapingdog" : "direct";

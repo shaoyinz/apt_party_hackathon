@@ -1,5 +1,26 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { databaseConfig } from "./pgRepository.js";
 import { createPgSaleStore, DEFAULT_SEARCH_URL, readSaleCache } from "./zillowCache.js";
+import { parseZillowCoverage } from "../src/zillowCoverage.js";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+export function configuredZillowSources(env = process.env) {
+    const override = parseZillowCoverage(env.ZILLOW_SEARCH_SOURCES);
+    if (override)
+        return override;
+    try {
+        const file = JSON.parse(readFileSync(path.join(root, "zillow-sources.json"), "utf8"));
+        if (Array.isArray(file) && file.length)
+            return file;
+    }
+    catch {
+        return [{ label: "Brooklyn, NY", url: DEFAULT_SEARCH_URL }];
+    }
+    return [{ label: "Brooklyn, NY", url: DEFAULT_SEARCH_URL }];
+}
 
 function send(res, status, body) {
     res.statusCode = status;
@@ -23,6 +44,7 @@ function blocked(reason) {
         count: 0,
         truncated: false,
         listings: [],
+        configured_sources: configuredZillowSources(),
         error: reason,
     };
 }
@@ -53,7 +75,8 @@ export function createZillowReadMiddleware(getStore) {
             const store = await getStore();
             if (!store?.configured)
                 return send(res, 503, blocked(store?.reason || "DATABASE_URL and PGHOST are unset."));
-            send(res, 200, await readSaleCache(store, searchUrl, new Date()));
+            const body = await readSaleCache(store, searchUrl, new Date());
+            send(res, 200, { ...body, configured_sources: configuredZillowSources() });
         }
         catch {
             send(res, 503, blocked("The sale cache could not be read. Credentials were not included."));

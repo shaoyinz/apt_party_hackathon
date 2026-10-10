@@ -2,6 +2,20 @@ import { randomUUID } from "node:crypto";
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+function connectionFromUrl(url) {
+    const options = { connectionString: url };
+    let sslmode = "";
+    try {
+        sslmode = new URL(url).searchParams.get("sslmode") || "";
+    }
+    catch {
+        sslmode = "";
+    }
+    if (sslmode === "require" || sslmode === "verify-ca" || sslmode === "verify-full")
+        options.ssl = { rejectUnauthorized: true };
+    return options;
+}
+
 export function databaseConfig() {
     const url = process.env.DATABASE_URL;
     const host = process.env.PGHOST;
@@ -14,7 +28,7 @@ export function databaseConfig() {
         configured: true,
         schema,
         connection: url
-            ? { connectionString: url }
+            ? connectionFromUrl(url)
             : {
                 host,
                 port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,

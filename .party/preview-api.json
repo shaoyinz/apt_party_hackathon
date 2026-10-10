@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "requests": [
+    {
+      "name": "Read Zillow sale cache",
+      "method": "GET",
+      "path": "/api/zillow-sales"
+    }
+  ]
+}

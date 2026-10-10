@@ -290,3 +290,7 @@ dd { margin: 0.15rem 0 0; }
   .priority-actions { grid-column: auto; }
   .page { padding-top: 2.2rem; }
 }
+
+.sale-panel { border-top: 4px solid var(--stamp); }
+.sale-list { display: grid; gap: 0.75rem; padding: 0; list-style: none; }
+.sale-list li { background: var(--card); border: 1px solid var(--line); padding: 0.75rem; }
