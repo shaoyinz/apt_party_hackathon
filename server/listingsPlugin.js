@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { demoCatalog } from "./demoListings.js";
+import { cityCatalog, schedulerStatus, startRedfinScheduler } from "./redfinRefresh.js";
 import { applyRefresh, emptySnapshot, publicCatalog, redactSecrets } from "../src/importCache.js";
 import { DEFAULT_LIMITS, resolveSources } from "../src/sources.js";
 
@@ -104,6 +105,15 @@ export function listingsPlugin(root) {
       res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(body));
     };
+    if (url === "/api/redfin-status" && req.method === "GET") {
+      void cityCatalog(root, "").then((body) => send(200, { ...body, scheduler: schedulerStatus() }));
+      return;
+    }
+    if (url === "/api/redfin-listings" && req.method === "GET") {
+      const city = new URL(req.url, "http://127.0.0.1").searchParams.get("city") || "";
+      void cityCatalog(root, city).then((body) => send(200, body));
+      return;
+    }
     if (url === "/api/demo-listings" && req.method === "GET") {
       void demoCatalog()
         .then((body) => send(200, body))
@@ -134,9 +144,11 @@ export function listingsPlugin(root) {
     name: "roost-listings",
     configureServer(server) {
       server.middlewares.use(middleware);
+      startRedfinScheduler(root);
     },
     configurePreviewServer(server) {
       server.middlewares.use(middleware);
+      startRedfinScheduler(root);
     },
   };
 }
