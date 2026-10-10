@@ -1,6 +1,6 @@
 # Local preview
 
-Verified for the Roost prototype in this project directory. The Vite dev server also exposes `/api/listings`. No database is required. Craigslist refresh needs outbound HTTPS.
+Verified for the Roost prototype in this project directory. The Vite dev server exposes `/api/listings` for Craigslist import and `/api/imports` for bring-your-own listings. Sample search needs no database. Database and OCR credentials are optional.
 
 ## Dependency setup
 
@@ -12,7 +12,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`.
+None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Optional PostgreSQL when `DATABASE_URL` or `PGHOST` is set. Optional `tesseract` for screenshot OCR. Variable names are in `.env.example`.
 
 ## Environment prerequisites
 

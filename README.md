@@ -1,6 +1,6 @@
 # Roost interactive prototype
 
-Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship with the app. A dev-server importer can add unverified rental posts from configured Craigslist searches.
+Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship with the app. A dev-server importer can add unverified Craigslist posts. Bring your own listing can extract a public link or screenshots, then save to PostgreSQL when database credentials are configured.
 
 ## Status
 
@@ -86,7 +86,9 @@ Download JSON (`roost-search-feedback.json`) is created only when you click Down
 
 ## Deferred integrations
 
-Marketplace, Zillow, Redfin, Facebook group scraping, Telegram, geocoding, maps, real commute calculations, invitations, voting, realtime collaboration, external reviews, shared databases, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+Marketplace, Zillow, Redfin, Facebook group scraping, Telegram, geocoding, maps, real commute calculations, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+
+Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). Sample fixtures and Craigslist imports stay separately labeled.
 
 ## Checks
 

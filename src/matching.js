@@ -63,7 +63,7 @@ function explain(listing, priority, mode) {
                 detail: `Sample estimate ${listing.commuteMinutes} min to ${DEMO_COMMUTE_DESTINATION}. Not a calculated route.`,
             };
         case "price":
-            return { id: priority, detail: priceDetail(listing, mode) };
+return { id: priority, detail: priceDetail(listing, mode) };
         case "space":
             if (listing.sqft == null && listing.beds == null) {
                 return { id: priority, detail: "Size is unknown and earns no space match." };
