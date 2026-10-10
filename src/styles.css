@@ -295,3 +295,92 @@ dd { margin: 0.15rem 0 0; }
   .priority-actions { grid-column: auto; }
   .page { padding-top: 2.2rem; }
 }
+
+.page.wide { width: min(1180px, calc(100% - 2rem)); }
+.demo-app {
+  --bg: #f5f4f2;
+  --surface: #ffffff;
+  --ink: #1c1b19;
+  --muted: #6f6b66;
+  --line: #e4e2de;
+  --accent: #2f5f8a;
+  --accent-ink: #ffffff;
+  --good: #1b7a45;
+  --good-bg: #e8f6ee;
+  --warn: #8a5a00;
+  --warn-bg: #fbf4e6;
+  --bad: #b42318;
+  --bad-bg: #fdeceb;
+  --chip: #f3f1ed;
+  --nav: #eceae6;
+  color: var(--ink);
+  font-family: "Liberation Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+.demo-app[data-theme="dark"] {
+  --bg: #121211;
+  --surface: #1c1c1a;
+  --ink: #f4f2ee;
+  --muted: #a8a29a;
+  --line: #333330;
+  --accent: #8eb8d8;
+  --accent-ink: #10202c;
+  --good: #7dceaa;
+  --good-bg: #173226;
+  --warn: #e2b15a;
+  --warn-bg: #3a2e14;
+  --bad: #f0a8a2;
+  --bad-bg: #3d1c1a;
+  --chip: #262624;
+  --nav: #2a2a28;
+  color: var(--ink);
+}
+.demo-app .panel, .demo-app .card, .demo-app .rail, .demo-app .sheet {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.demo-app .top, .demo-app .nav, .demo-app .toolbar, .demo-app .layout, .demo-app .feed, .demo-app .facts, .demo-app .stats, .demo-app .pick, .demo-app .group-grid, .demo-app .compare-scroll, .demo-app .sheet-toggle, .demo-app .switcher, .demo-app .linkbox, .demo-app .chips, .demo-app .signals, .demo-app .actions, .demo-app .score, .demo-app .missing {
+  color: inherit;
+}
+.demo-app .top { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 0.8rem; }
+.demo-app .top h1 { margin: 0; font-size: 1.6rem; }
+.demo-app .nav { display: flex; gap: 0.35rem; background: var(--nav); border-radius: 12px; padding: 0.25rem; }
+.demo-app .nav a { text-decoration: none; color: var(--muted); border-radius: 12px; padding: 0.35rem 0.7rem; }
+.demo-app .nav a.active { background: var(--surface); color: var(--ink); }
+.demo-app .toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7rem; align-items: end; margin-top: 1rem; }
+.demo-app .toolbar label, .demo-app .search { display: grid; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.demo-app .search { grid-column: 1 / -1; }
+.demo-app .layout { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; margin-top: 1rem; }
+.demo-app .feed { display: grid; gap: 0.8rem; }
+.demo-app .card { display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-top: 0; }
+.demo-app .facts, .demo-app .signals, .demo-app .actions, .demo-app .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.demo-app .fact, .demo-app .chips span { background: var(--chip); border-radius: 12px; padding: 0.2rem 0.55rem; }
+.demo-app .fact.miss, .demo-app .miss { color: var(--warn); background: var(--warn-bg); }
+.demo-app .good { color: var(--good); }
+.demo-app .bad { color: var(--bad); font-weight: 700; }
+.demo-app .bad-btn { background: var(--bad-bg); color: var(--bad); }
+.demo-app .num { font-variant-numeric: tabular-nums; }
+.demo-app .score { text-align: right; }
+.demo-app .score b { font-size: 1.8rem; display: block; }
+.demo-app .rail { position: sticky; top: 1rem; }
+.demo-app .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.demo-app .stat { background: var(--chip); border-radius: 12px; padding: 0.7rem; }
+.demo-app .pick { display: flex; justify-content: space-between; gap: 0.5rem; border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem; margin: 0.5rem 0; }
+.demo-app .pick-in { animation: slide-in 220ms ease; }
+@keyframes slide-in { from { transform: translateX(16px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.demo-app .sheet-toggle { display: none; }
+.demo-app .sheet { position: fixed; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; z-index: 5; max-height: 70vh; overflow: auto; }
+.demo-app .group-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1rem; }
+.demo-app .compare-scroll { overflow-x: auto; }
+.demo-app table { width: 100%; border-collapse: collapse; background: var(--surface); }
+.demo-app th, .demo-app td { border-bottom: 1px solid var(--line); padding: 0.75rem; text-align: left; vertical-align: top; }
+.demo-app .member-list { list-style: none; padding: 0; }
+.demo-app .linkbox { overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem; }
+@media (prefers-reduced-motion: reduce) { .demo-app .pick-in { animation: none; } }
+@media (max-width: 800px) {
+  .demo-app .layout, .demo-app .group-grid, .demo-app .card { grid-template-columns: 1fr; }
+  .demo-app .rail { display: none; }
+  .demo-app .sheet-toggle { display: inline-flex; position: fixed; left: 0.8rem; right: 0.8rem; bottom: 0.8rem; z-index: 4; }
+  .demo-app .score { text-align: left; }
+}
