@@ -119,7 +119,20 @@ On 2026-10-10T21:16:35Z a bounded direct fetch of `https://www.zillow.com/homes/
 
 ### Daily sale cache
 
-This does not change rental search and does not write asking prices into `price_monthly`. Apply `supabase/002_zillow_sale_cache.sql` in the same database as the app. `GET /api/zillow-sales` reads that cache only. It never starts the scraper. A missing database returns `database_unavailable`. No successful snapshot returns `unavailable` with the latest failure. An explicit empty page returns `empty`. Rows older than 24 hours are `stale` and are still returned. Cached responses set `live` to false.
+This does not change rental search and does not write asking prices into `price_monthly`. The for-sale section on the page reads `GET /api/zillow-sales` once. Filtering that section does not scrape.
+
+Apply the migration in the Supabase SQL editor, or with `psql` using a server-side `DATABASE_URL` that is not committed:
+
+```bash
+psql "$DATABASE_URL" -f supabase/002_zillow_sale_cache.sql
+psql "$DATABASE_URL" -c "SELECT tablename FROM pg_tables WHERE tablename LIKE 'zillow_%' ORDER BY tablename;"
+```
+
+The file uses `IF NOT EXISTS`, so applying it again is safe. It does not alter `public.listings`. Put `DATABASE_URL` only in server or job secret storage. Do not prefix it with `VITE_`. Connections with `sslmode=require`, `verify-ca`, or `verify-full` verify certificates.
+
+Configured coverage defaults to Brooklyn, NY in `zillow-sources.json`. Override with `ZILLOW_SEARCH_SOURCES` using `Label => URL` pairs separated by `|` or newlines. Do not comma-split those URLs.
+
+`GET /api/zillow-sales` reads that cache only. It never starts the scraper. A missing database returns `database_unavailable`. No successful snapshot returns `unavailable` with the latest failure. An explicit empty page returns `empty`. Rows older than 24 hours are `stale` and are still returned. Cached responses set `live` to false.
 
 The one-shot job is `node scripts/zillow-refresh.mjs`. It uses the scraper, defaults to 03:00 UTC via `ZILLOW_REFRESH_CRON` (`0 3 * * *`), and does not retry. Overlapping runs record `overlap` and keep the last snapshot. HTTP 403, challenges, truncated pages, and database errors do not clear a prior snapshot. An explicit empty page does.
 
@@ -129,7 +142,7 @@ Verification on 2026-10-10, kept separate:
 
 - Mock database tests in `server/zillowCache.test.js` passed, including failed-refresh preservation and cached reads that do not call the scraper.
 - Real database write/read was not run. `DATABASE_URL` and `PGHOST` are unset, and `node scripts/zillow-refresh.mjs` exited 1 with `missing_database`.
-- The production schedule is not active.
+- The production schedule is not active. The Railway deployment session has not installed a cron service, and this session has no Railway token.
 - Live ingestion was checked again at 2026-10-10T21:37:45Z. Direct fetch returned HTTP 403 and extracted 0 listings. That is still a block, not a successful scrape.
 
 ## Sample limitations

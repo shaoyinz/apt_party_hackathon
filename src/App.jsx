@@ -9,6 +9,7 @@ import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
 import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
+import { SaleCache } from "./SaleCache";
 import { useLocationMetrics } from "./useLocationMetrics";
 const store = probeBrowserStore();
 export function App() {
@@ -196,6 +197,7 @@ const imported = catalog?.listings ?? [];
         to the team unless you share an export yourself.
       </p>
       <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>
+      <SaleCache />
       {warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
         </p>) : (        <p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>)}
