@@ -1,4 +1,4 @@
-import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, TRAVEL_LABELS, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
+import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, PRIORITY_LABELS, SPACE_SQFT_SCALE, TRAVEL_LABELS, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
 function clamp01(value) {
     return Math.min(1, Math.max(0, value));
 }
@@ -18,8 +18,28 @@ export function withinBudget(listing, budget, mode = "solo") {
 }
 function rankingOptions(modeOrOptions) {
     if (typeof modeOrOptions === "string")
-        return { mode: modeOrOptions };
-    return { mode: "solo", ...(modeOrOptions ?? {}) };
+        return { mode: modeOrOptions, mustHaves: emptyMustHaveFilter() };
+    return { mode: "solo", mustHaves: emptyMustHaveFilter(), ...(modeOrOptions ?? {}) };
+}
+function emptyMustHaveFilter() {
+    return { pets: false, parking: false, furnished: false, minBeds: null, maxCommute: null };
+}
+export function mustHaveFailure(listing, must = emptyMustHaveFilter(), options = {}) {
+    if (must.pets && listing.pets !== true)
+        return "pets";
+    if (must.parking && listing.parking !== true)
+        return "parking";
+    if (must.furnished && listing.furnished !== true)
+        return "furnished";
+    if (must.minBeds != null && !(listing.beds != null && listing.beds >= must.minBeds))
+        return "beds";
+    if (must.maxCommute != null) {
+        const current = metric(listing, options);
+        const minutes = current.commuteStatus === "ok" ? current.commuteMinutes : null;
+        if (minutes == null || minutes > must.maxCommute)
+            return "commute";
+    }
+    return null;
 }
 function metric(listing, options) {
     return options.metricsById?.[listing.id] ?? {};
@@ -194,7 +214,10 @@ export function rankListings(listings, area, budget, priorities, modeOrOptions =
     const notComparable = inArea.filter((listing) => budget != null && applicableMonthlyRent(listing, mode) == null);
     const excludedUnknownRent = notComparable.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
     const excludedInapplicableRent = notComparable.length - excludedUnknownRent;
-    const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget, mode));
+    const affordable = inArea.filter((listing) => withinBudget(listing, budget, mode));
+    const must = options.mustHaves ?? emptyMustHaveFilter();
+    const excludedByMustHave = affordable.filter((listing) => mustHaveFailure(listing, must, options) != null).length;
+    const eligibleListings = affordable.filter((listing) => mustHaveFailure(listing, must, options) == null);
     const weights = priorities.map((_, index) => priorities.length - index);
     const eligible = eligibleListings
         .map((listing) => {
@@ -214,5 +237,14 @@ export function rankListings(listings, area, budget, priorities, modeOrOptions =
         return { listing, score, matches, tradeoffs, unknowns };
     })
         .sort((a, b) => b.score - a.score || a.listing.id.localeCompare(b.listing.id));
-    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent };
+    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent, excludedByMustHave };
+}
+export function priorityExplanation(listing, priority, modeOrOptions = {}) {
+    return explain(listing, priority, rankingOptions(modeOrOptions));
+}
+export function rankReason(item) {
+    const picked = item.matches[0] ?? item.tradeoffs[0] ?? item.unknowns[0];
+    if (!picked)
+        return "No selected priority to explain this rank.";
+    return `${PRIORITY_LABELS[picked.id]}: ${picked.detail}`;
 }

@@ -1,4 +1,4 @@
-import { emptyState, isPriorityId, isTravelMode } from "./model";
+import { emptyMustHaves, emptyState, isPriorityId, isTravelMode } from "./model";
 export const STORAGE_KEY = "roost-prototype-v1";
 const INVALID_WARNING = "Saved search data in this browser was unreadable, so Roost started fresh. New changes can still be saved here.";
 const UNAVAILABLE_WARNING = "This browser is not keeping a saved copy. You can still search and export during this visit. A reload may clear your entries.";
@@ -81,6 +81,9 @@ function parseState(raw) {
             householdSize,
             budgetText: record.budgetText,
             priorities,
+            mustHaves: parseMustHaves(record.mustHaves),
+            minBedsText: typeof record.minBedsText === "string" ? record.minBedsText : "",
+            maxCommuteText: typeof record.maxCommuteText === "string" ? record.maxCommuteText : "",
             destination: typeof record.destination === "string" ? record.destination : "",
             travelMode: isTravelMode(record.travelMode) ? record.travelMode : "driving",
             transitDeparture: typeof record.transitDeparture === "string" ? record.transitDeparture : "",
@@ -100,6 +103,16 @@ function parseHousehold(value) {
     if (value === 2 || value === 3 || value === 4)
         return value;
     return undefined;
+}
+function parseMustHaves(value) {
+    const next = emptyMustHaves();
+    if (!value || typeof value !== "object")
+        return next;
+    for (const key of Object.keys(next)) {
+        if (value[key] === true)
+            next[key] = true;
+    }
+    return next;
 }
 function parsePriorities(value) {
     if (!Array.isArray(value))

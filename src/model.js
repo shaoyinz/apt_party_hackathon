@@ -32,6 +32,10 @@ export const PRIORITY_LABELS = {
     parking: "Parking",
     lease: "Lease flexibility",
 };
+export const MUST_HAVE_IDS = ["pets", "parking", "furnished"];
+export function emptyMustHaves() {
+    return { pets: false, parking: false, furnished: false };
+}
 export const AREA_SUGGESTIONS = [
     "Sunnyvale",
     "Santa Clara",
@@ -52,6 +56,9 @@ export function emptyState() {
         householdSize: null,
         budgetText: "",
         priorities: [],
+        mustHaves: emptyMustHaves(),
+        minBedsText: "",
+        maxCommuteText: "",
         destination: "",
         travelMode: "driving",
         transitDeparture: "",
@@ -81,6 +88,17 @@ export function parseBudget(value) {
         return { ok: false };
     return { ok: true, budget };
 }
+export function parseOptionalCount(value) {
+    const trimmed = value.trim();
+    if (!trimmed)
+        return { ok: true, value: null };
+    if (!/^\d+$/.test(trimmed))
+        return { ok: false, value: null };
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0)
+        return { ok: false, value: null };
+    return { ok: true, value: parsed };
+}
 export function householdError(mode, size) {
     if (mode === "solo")
         return null;
@@ -99,11 +117,28 @@ export function validateSearch(draft) {
     if (!parseBudget(draft.budgetText).ok) {
         errors.budget = "Enter a positive total monthly rent in USD, or leave budget blank.";
     }
+    if (!parseOptionalCount(draft.minBedsText ?? "").ok) {
+        errors.minBeds = "Enter a positive minimum bedroom count, or leave it blank.";
+    }
+    if (!parseOptionalCount(draft.maxCommuteText ?? "").ok) {
+        errors.maxCommute = "Enter a positive maximum commute in minutes, or leave it blank.";
+    }
     if (draft.priorities.length === 0) {
         errors.priorities =
             "Choose at least one priority. Roost will not invent a recommendation without one.";
     }
     return errors;
+}
+export function formatScore(score) {
+    if (!Number.isFinite(score))
+        return "0";
+    return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+export function rentPerPerson(listing, householdSize) {
+    const amount = applicableMonthlyRent(listing, householdSize ? "roommates" : "solo");
+    if (amount == null || householdSize == null || householdSize <= 0)
+        return null;
+    return amount / householdSize;
 }
 export function formatMoney(amount) {
     return new Intl.NumberFormat("en-US", {

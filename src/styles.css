@@ -272,6 +272,11 @@ dd { margin: 0.15rem 0 0; }
 .attribution a { color: var(--pine); }
 
 .useful-box { margin-top: 0.8rem; }
+.why { margin: 0.35rem 0 0.2rem; font-weight: 700; }
+.compare-wrap { overflow-x: auto; margin-top: 0.6rem; }
+.compare { border-collapse: collapse; min-width: 100%; }
+.compare th, .compare td { border: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; min-width: 9rem; background: #fff; }
+.compare th { background: var(--card); }
 
 .sr-only {
   position: absolute;
