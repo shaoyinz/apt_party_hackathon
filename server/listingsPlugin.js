@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { demoCatalog } from "./demoListings.js";
+import { hydrateRedfinCache, publicRedfinCatalog, readRedfinCache, refreshRedfinCache } from "./redfinRefresh.js";
 import { applyRefresh, emptySnapshot, publicCatalog, redactSecrets } from "../src/importCache.js";
 import { DEFAULT_LIMITS, resolveSources } from "../src/sources.js";
 
@@ -104,6 +105,10 @@ export function listingsPlugin(root) {
       res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(body));
     };
+    if (url === "/api/redfin-listings" && req.method === "GET") {
+      send(200, publicRedfinCatalog(readRedfinCache(root)));
+      return;
+    }
     if (url === "/api/demo-listings" && req.method === "GET") {
       void demoCatalog()
         .then((body) => send(200, body))
@@ -134,9 +139,15 @@ export function listingsPlugin(root) {
     name: "roost-listings",
     configureServer(server) {
       server.middlewares.use(middleware);
+      void hydrateRedfinCache(root)
+        .then(() => refreshRedfinCache(root))
+        .catch(() => {});
     },
     configurePreviewServer(server) {
       server.middlewares.use(middleware);
+      void hydrateRedfinCache(root)
+        .then(() => refreshRedfinCache(root))
+        .catch(() => {});
     },
   };
 }

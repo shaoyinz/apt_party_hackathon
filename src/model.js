@@ -153,6 +153,10 @@ export function offerKindLabel(kind) {
 }
 export function rentFact(listing, mode) {
     const basis = listingRentBasis(listing);
+    if (basis === "for-sale") {
+        const price = listing.salePriceText || "Price unknown";
+        return `${price} for sale. Not monthly rent, so it cannot pass a monthly budget.`;
+    }
     if (basis === "unknown") {
         if (listing.rent == null)
             return "Unknown. Missing or ambiguous rent is not treated as affordable.";
