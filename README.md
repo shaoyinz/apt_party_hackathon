@@ -17,12 +17,14 @@ npm run dev
 
 The dev server binds to `127.0.0.1`. Pass `--port <port>` when a specific port is required. Open the printed local URL.
 
+Copy `.env.example` to `.env` if you want a local env file. No values are required, and `.env` is not committed.
+
 ```bash
 npm test
 npm run build
 ```
 
-`npm test` checks filtering, ranking, unknown-data handling, export contents, and storage recovery. `npm run build` typechecks and writes the production bundle to `PARTY_OUTPUT_DIR` when that variable is set, otherwise `dist`.
+`npm test` checks filtering, ranking, unknown-data handling, export contents, and storage recovery. `npm run build` writes the production bundle to `PARTY_OUTPUT_DIR` when that variable is set, otherwise `dist`.
 
 ## Scope
 
