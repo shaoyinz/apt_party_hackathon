@@ -12,6 +12,7 @@ From this project directory:
 
 ```bash
 npm ci
+npm run py:sync
 npm run dev
 ```
 

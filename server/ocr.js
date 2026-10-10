@@ -1,14 +1,25 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
-const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../scripts/ocr_screenshot.py");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const scriptPath = path.join(root, "scripts/ocr_screenshot.py");
+const venvPython = path.join(root, ".venv/bin/python");
+
+function pythonBin() {
+    if (process.env.ROOST_PYTHON)
+        return process.env.ROOST_PYTHON;
+    if (existsSync(venvPython))
+        return venvPython;
+    return "python3";
+}
 
 export async function ocrStatus() {
     try {
-        const result = await execFileAsync("python3", [scriptPath, "--check"], { timeout: 15000 });
+        const result = await execFileAsync(pythonBin(), [scriptPath, "--check"], { timeout: 15000 });
         const payload = JSON.parse(result.stdout);
         return { available: payload.ok === true, engine: payload.engine || "python" };
     }
@@ -19,7 +30,7 @@ export async function ocrStatus() {
 
 export async function readImageText(filePath) {
     try {
-        const result = await execFileAsync("python3", [scriptPath, filePath], {
+        const result = await execFileAsync(pythonBin(), [scriptPath, filePath], {
             timeout: 60000,
             maxBuffer: 4_000_000,
         });

@@ -37,13 +37,13 @@ Screenshot files live under ignored `data/listings/<group>/<listing>/` and are s
 
 Fetches allow public HTTP(S) only, follow at most 3 redirects, stop at 8 seconds, and read at most 1.5 MB. Each hop is checked against loopback, private, link-local, and similar destinations. Login walls and blocked pages are not bypassed.
 
-Screenshot OCR uses Python, not a separate `tesseract` install. From this directory:
+Screenshot OCR uses the project virtualenv, not a separate `tesseract` install. `pyproject.toml` and `uv.lock` pin RapidOCR. From this directory:
 
 ```bash
-python3 -m pip install -r scripts/requirements-ocr.txt
+npm run py:sync
 ```
 
-`scripts/ocr_screenshot.py` runs RapidOCR and returns the text the Node API parses. If that package is missing, screenshot text is not invented; the user can type the facts and still save the images.
+That runs `uv sync --frozen` and creates `.venv`. The API uses `.venv/bin/python`. If `uv sync` has not been run, screenshot text is not invented; the user can type the facts and still save the images.
 
 ## Checks
 

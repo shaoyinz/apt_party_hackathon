@@ -13,7 +13,7 @@ def unavailable():
     return emit({
         "ok": False,
         "code": "ocr_unavailable",
-        "message": "Python OCR is not installed. Run: python3 -m pip install -r scripts/requirements-ocr.txt",
+        "message": "Python OCR is not installed. From the project directory run: npm run py:sync",
     }, 1)
 
 
