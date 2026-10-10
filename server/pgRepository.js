@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -48,9 +48,42 @@ export async function createPgRepository() {
         },
         async ensureMember(label) {
             return withClient(pool, schema, async (client) => {
-                const group = await client.query("INSERT INTO groups (name) VALUES ($1) RETURNING id", [label]);
-                const member = await client.query("INSERT INTO members (group_id, name) VALUES ($1, $2) RETURNING id", [group.rows[0].id, label]);
-                return { groupId: group.rows[0].id, memberId: member.rows[0].id, name: label };
+                for (let attempt = 0; attempt < 5; attempt += 1) {
+                    try {
+                        const group = await client.query("INSERT INTO groups (name, invite_code) VALUES ($1, $2) RETURNING id, invite_code", [label, randomBytes(4).toString("hex")]);
+                        const member = await client.query("INSERT INTO members (group_id, name) VALUES ($1, $2) RETURNING id, name", [group.rows[0].id, label]);
+                        return { groupId: group.rows[0].id, memberId: member.rows[0].id, name: member.rows[0].name, inviteCode: group.rows[0].invite_code };
+                    }
+                    catch (error) {
+                        if (error.code !== "23505")
+                            throw error;
+                    }
+                }
+                throw new Error("Could not create a saved-listings page.");
+            });
+        },
+        async joinByCode(name, code, currentMemberId) {
+            return withClient(pool, schema, async (client) => {
+                const group = await client.query("SELECT id, invite_code FROM groups WHERE invite_code = $1", [code]);
+                if (!group.rows[0])
+                    return null;
+                if (currentMemberId) {
+                    const current = await client.query("SELECT id, name FROM members WHERE id = $1 AND group_id = $2", [currentMemberId, group.rows[0].id]);
+                    if (current.rows[0])
+                        return { groupId: group.rows[0].id, memberId: current.rows[0].id, name: current.rows[0].name, inviteCode: group.rows[0].invite_code };
+                }
+                const member = await client.query("INSERT INTO members (group_id, name) VALUES ($1, $2) RETURNING id, name", [group.rows[0].id, name]);
+                return { groupId: group.rows[0].id, memberId: member.rows[0].id, name: member.rows[0].name, inviteCode: group.rows[0].invite_code };
+            });
+        },
+        async pageIdentity(groupId, memberId) {
+            return withClient(pool, schema, async (client) => {
+                const row = await client.query(`SELECT m.id, m.name, g.invite_code
+                    FROM members m JOIN groups g ON g.id = m.group_id
+                    WHERE m.id = $1 AND m.group_id = $2`, [memberId, groupId]);
+                if (!row.rows[0])
+                    return null;
+                return { groupId, memberId: row.rows[0].id, name: row.rows[0].name, inviteCode: row.rows[0].invite_code };
             });
         },
         async memberInGroup(memberId, groupId) {

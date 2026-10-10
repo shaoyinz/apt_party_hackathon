@@ -1,20 +1,49 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 export function createMemoryRepository() {
     const groups = new Map();
+    const members = new Map();
     const listings = new Map();
     const attributes = new Map();
     const locks = new Map();
+    function remember(groupId, memberId, name, inviteCode) {
+        return { groupId, memberId, name, inviteCode };
+    }
     return {
         kind: "memory",
         async ensureMember(label) {
             const groupId = randomUUID();
             const memberId = randomUUID();
-            groups.set(groupId, { id: groupId, name: label });
-            return { groupId, memberId, name: label };
+            let inviteCode = randomBytes(4).toString("hex");
+            while ([...groups.values()].some((group) => group.inviteCode === inviteCode))
+                inviteCode = randomBytes(4).toString("hex");
+            groups.set(groupId, { id: groupId, name: label, inviteCode });
+            members.set(memberId, { id: memberId, groupId, name: label });
+            return remember(groupId, memberId, label, inviteCode);
+        },
+        async joinByCode(name, code, currentMemberId) {
+            const group = [...groups.values()].find((item) => item.inviteCode === code);
+            if (!group)
+                return null;
+            if (currentMemberId) {
+                const current = members.get(currentMemberId);
+                if (current && current.groupId === group.id)
+                    return remember(group.id, current.id, current.name, group.inviteCode);
+            }
+            const memberId = randomUUID();
+            members.set(memberId, { id: memberId, groupId: group.id, name });
+            return remember(group.id, memberId, name, group.inviteCode);
+        },
+        async pageIdentity(groupId, memberId) {
+            const member = members.get(memberId);
+            const group = groups.get(groupId);
+            if (!member || !group || member.groupId !== groupId)
+                return null;
+            return remember(groupId, memberId, member.name, group.inviteCode);
         },
         async memberInGroup(memberId, groupId) {
-            return groups.has(groupId) && Boolean(memberId);
+            const member = members.get(memberId);
+            return Boolean(member && member.groupId === groupId && groups.has(groupId));
         },
         async findIdempotent(groupId, idempotencyKey) {
             const existing = [...listings.values()].find((row) => row.group_id === groupId && row.field_confidence.idempotencyKey === idempotencyKey);
