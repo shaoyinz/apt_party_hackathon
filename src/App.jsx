@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
 import { ImportFlow } from "./ImportFlow";
-import { loadImports, openImportSession } from "./importApi";
+import { createSavedPage, joinSavedPage, loadImports, loadSession } from "./importApi";
 import { toSearchListing } from "./import/searchShape";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
@@ -26,6 +26,8 @@ const [catalog, setCatalog] = useState(null);
     const [userListings, setUserListings] = useState([]);
     const [redfinListings, setRedfinListings] = useState([]);
     const [redfinNote, setRedfinNote] = useState("");
+    const [identity, setIdentity] = useState(null);
+    const [pageError, setPageError] = useState("");
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
@@ -40,10 +42,15 @@ let cancelled = false;
             if (!cancelled)
                 setCatalogError("The listing import service did not respond. Sample fixtures are not live results.");
         });
-        openImportSession()
-            .then(() => loadImports())
+        loadSession()
+            .then((next) => {
+            if (cancelled)
+                return null;
+            setIdentity(next);
+            return loadImports();
+        })
             .then((payload) => {
-            if (!cancelled)
+            if (!cancelled && payload)
                 setUserListings((payload.listings || []).map(toSearchListing));
         })
             .catch(() => {
@@ -185,6 +192,13 @@ const imported = catalog?.listings ?? [];
             setRefreshing(false);
         }
     }
+    function applySavedPage(next) {
+        setIdentity(next);
+        setPageError("");
+        return loadImports()
+            .then((payload) => setUserListings((payload.listings || []).map(toSearchListing)))
+            .catch(() => setUserListings([]));
+    }
     function reset() {
         if (!window.confirm("Reset this browser's saved search, useful listings, and feedback?"))
             return;
@@ -216,11 +230,18 @@ const imported = catalog?.listings ?? [];
         to the team unless you share an export yourself.
       </p>
       <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>
+      <SavedPage identity={identity} error={pageError} onCreate={(name) => {
+            setPageError("");
+            createSavedPage(name).then((next) => applySavedPage(next)).catch((error) => setPageError(error.message));
+        }} onJoin={(name, code) => {
+            setPageError("");
+            joinSavedPage(name, code).then((next) => applySavedPage(next)).catch((error) => setPageError(error.message));
+        }}/>
       {warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
         </p>) : (        <p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>)}
 
-{importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
+{importOpen ? (<ImportFlow identity={identity} onClose={() => setImportOpen(false)} onSaved={(rows) => {
             setUserListings((rows || []).map(toSearchListing));
             setImportOpen(false);
         }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} redfinListings={redfinListings} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
@@ -231,6 +252,46 @@ const imported = catalog?.listings ?? [];
         Transit schedules: VTA and Caltrain GTFS. Driving estimates do not include live traffic.
       </p>
     </div>);
+}
+function SavedPage({ identity, error, onCreate, onJoin }) {
+    const [name, setName] = useState("");
+    const [joinName, setJoinName] = useState("");
+    const [code, setCode] = useState("");
+    if (identity) {
+        return (<section className="panel" aria-labelledby="saved-page-heading">
+          <h2 id="saved-page-heading">Your saved-listings page</h2>
+          <p>Your user id is <code>{identity.userId}</code>.</p>
+          <p><strong>Invite others</strong> with this code: <code className="invite-code">{identity.inviteCode}</code>. They enter their name and this code to work on this page.</p>
+        </section>);
+    }
+    return (<section className="panel" aria-labelledby="saved-page-heading">
+      <h2 id="saved-page-heading">Your saved-listings page</h2>
+      <form onSubmit={(event) => {
+            event.preventDefault();
+            onCreate(name);
+        }}>
+        <div className="field">
+          <label htmlFor="demo-name">Your name</label>
+          <input id="demo-name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name"/>
+        </div>
+        <button className="primary" type="submit">Create my page</button>
+      </form>
+      <form onSubmit={(event) => {
+            event.preventDefault();
+            onJoin(joinName, code);
+        }}>
+        <div className="field">
+          <label htmlFor="join-name">Name</label>
+          <input id="join-name" value={joinName} onChange={(event) => setJoinName(event.target.value)} autoComplete="name"/>
+        </div>
+        <div className="field">
+          <label htmlFor="invite-code">Invite code</label>
+          <input id="invite-code" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" spellCheck="false"/>
+        </div>
+        <button type="submit">Join page</button>
+      </form>
+      {error ? <p className="error" role="alert">{error}</p> : null}
+    </section>);
 }
 function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, onImport, }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));

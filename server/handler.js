@@ -25,16 +25,47 @@ export function createHandler(options) {
             if (req.method === "GET" && url.pathname === "/api/health") {
                 return send(res, 200, await health(options));
             }
+            if (req.method === "GET" && url.pathname === "/api/session") {
+                const existing = await readSession(req, secret, sessions, options.repository);
+                if (!existing)
+                    return send(res, 401, { error: "Create a saved-listings page or join one with an invite code." });
+                const identity = await options.repository?.pageIdentity?.(existing.groupId, existing.memberId);
+                if (!identity)
+                    return send(res, 401, { error: "Create a saved-listings page or join one with an invite code." });
+                return send(res, 200, publicIdentity(identity));
+            }
             if (req.method === "POST" && url.pathname === "/api/session") {
                 const existing = await readSession(req, secret, sessions, options.repository);
-                if (existing)
-                    return send(res, 200, { ok: true, testResolver });
-                return send(res, 200, await openSession(res, options, sessions, secret, testResolver, "Roost test member"));
+                if (existing) {
+                    const identity = await options.repository?.pageIdentity?.(existing.groupId, existing.memberId);
+                    if (!identity)
+                        return send(res, 401, { error: "Create a saved-listings page or join one with an invite code." });
+                    return send(res, 200, publicIdentity(identity));
+                }
+                const body = await readJson(req);
+                const name = displayName(body.name);
+                if (!name)
+                    return send(res, 400, { error: "Enter your name to create a saved-listings page." });
+                return send(res, 200, await openSession(res, options, sessions, secret, name));
+            }
+            if (req.method === "POST" && url.pathname === "/api/session/join") {
+                const body = await readJson(req);
+                const name = displayName(body.name);
+                const code = normalizeInviteCode(body.inviteCode);
+                if (!name || !code)
+                    return send(res, 400, { error: "Enter your name and the invite code." });
+                if (!options.repository?.joinByCode)
+                    return send(res, 503, { error: databaseBlocker() });
+                const existing = await readSession(req, secret, sessions, options.repository);
+                const member = await options.repository.joinByCode(name, code, existing?.memberId);
+                if (!member)
+                    return send(res, 400, { error: "That invite code did not match a saved-listings page." });
+                return send(res, 200, writeSession(res, sessions, secret, member));
             }
             if (req.method === "POST" && url.pathname === "/api/session/test-peer") {
                 if (!testResolver)
                     return send(res, 404, { error: "Not found." });
-                return send(res, 200, await openSession(res, options, sessions, secret, true, "Roost other group"));
+                return send(res, 200, await openSession(res, options, sessions, secret, "Roost other group"));
             }
             const session = await readSession(req, secret, sessions, options.repository);
             if (!session)
@@ -107,16 +138,36 @@ async function health(options) {
     };
 }
 
-async function openSession(res, options, sessions, secret, enabled, label) {
-    if (!enabled)
-        throw new HttpError(503, "Authentication policies are not deployed, so Roost will not create a group from the browser.");
-    const member = options.repository
-        ? await options.repository.ensureMember(label)
-        : { groupId: randomUUID(), memberId: randomUUID(), name: label };
+async function openSession(res, options, sessions, secret, label) {
+    if (!options.repository?.ensureMember)
+        throw new HttpError(503, databaseBlocker());
+    const member = await options.repository.ensureMember(label);
+    return writeSession(res, sessions, secret, member);
+}
+
+function writeSession(res, sessions, secret, member) {
     sessions.set(`${member.groupId}:${member.memberId}`, member);
     const token = sign({ gid: member.groupId, mid: member.memberId, exp: Date.now() + 12 * 60 * 60 * 1000 }, secret);
     res.setHeader("set-cookie", `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/`);
-    return { ok: true, testResolver: true };
+    return publicIdentity(member);
+}
+
+function publicIdentity(member) {
+    return { ok: true, userId: member.memberId, name: member.name, inviteCode: member.inviteCode };
+}
+
+function displayName(value) {
+    const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+    if (!name || name.length > 40)
+        return null;
+    return name;
+}
+
+function normalizeInviteCode(value) {
+    const code = typeof value === "string" ? value.trim() : "";
+    if (!/^[A-Za-z0-9]{4,64}$/.test(code))
+        return null;
+    return code;
 }
 
 async function extractImport({ body, session, drafts, dataRoot, fetchPage }) {

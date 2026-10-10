@@ -1,6 +1,6 @@
 # Bring your own listing
 
-Users import one listing from screenshots, a public listing link, or manual entry after a failed read. Confirmed facts are saved for the current hunting group only.
+Users import one listing from screenshots, a public listing link, or manual entry after a failed read. Confirmed facts are saved on that person's saved-listings page, or on a page they joined with an invite code.
 
 ## Flow
 
@@ -29,7 +29,7 @@ If `DATABASE_URL` and `PGHOST` are unset, extract can still build a draft, and s
 
 ## Access
 
-The browser cannot choose `group_id`. A server-signed `roost_session` cookie names the member the server created. `ENABLE_TEST_RESOLVER=true` creates a test group and member because authentication policies are not deployed. Leave it unset when that shortcut should be refused.
+The browser cannot choose `group_id`. A person enters a display name to create a saved-listings page. That member id is the demo user id. **Invite others** shows the group's existing `invite_code`. Another person enters their name and that code to join the same page. A server-signed `roost_session` cookie stores the member. A wrong code does not join, and a supplied group id is ignored. An existing cookie is reused until they join a different code.
 
 Screenshot files live under ignored `data/listings/<group>/<listing>/` and are served only to that group. Another group's cookie receives not found.
 

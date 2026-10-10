@@ -60,6 +60,61 @@ describe("import handler", () => {
         expect(allowed.status).toBe(200);
     });
 
+    it("gives each name a page and lets an invite code share that page", async () => {
+        const repository = createMemoryRepository();
+        const handler = await testHandler(repository);
+        const ada = await session(handler, "/api/session", { name: "Ada" });
+        const ben = await session(handler, "/api/session", { name: "Ben" });
+        expect(ada.body.userId).not.toBe(ben.body.userId);
+        expect(ada.body.inviteCode).not.toBe(ben.body.inviteCode);
+        const reused = await call(handler, "POST", "/api/session", ada.cookie, { name: "Someone else" });
+        expect(reused.body.userId).toBe(ada.body.userId);
+        expect(reused.body.inviteCode).toBe(ada.body.inviteCode);
+        const extracted = await call(handler, "POST", "/api/imports/extract", ada.cookie, { url: "https://listing.example/unit" });
+        const saved = await call(handler, "POST", "/api/imports/confirm", ada.cookie, {
+            draftId: extracted.body.draftId,
+            idempotencyKey: "ada-key-1",
+            confirmed: true,
+            fields: { ...extracted.body.fields, city: "Sunnyvale", title: "Ada listing" },
+            sourceUrl: extracted.body.sourceUrl,
+        });
+        expect(saved.status).toBe(200);
+        expect((await call(handler, "GET", "/api/imports/saved", ben.cookie)).body.listings).toEqual([]);
+        const wrong = await call(handler, "POST", "/api/session/join", "", {
+            name: "Cara",
+            inviteCode: "missing",
+            groupId: "00000000-0000-4000-8000-000000000099",
+        });
+        expect(wrong.status).toBe(400);
+        expect(wrong.body.error).toMatch(/invite code/i);
+        const cara = await call(handler, "POST", "/api/session/join", "", {
+            name: "Cara",
+            inviteCode: ada.body.inviteCode,
+            groupId: "00000000-0000-4000-8000-000000000099",
+        });
+        expect(cara.status).toBe(200);
+        expect(cara.body.userId).not.toBe(ada.body.userId);
+        expect(cara.body.inviteCode).toBe(ada.body.inviteCode);
+        expect((await call(handler, "GET", "/api/imports/saved", cara.cookie)).body.listings).toHaveLength(1);
+        const again = await call(handler, "POST", "/api/session/join", cara.cookie, {
+            name: "Cara again",
+            inviteCode: ada.body.inviteCode,
+        });
+        expect(again.body.userId).toBe(cara.body.userId);
+        const added = await call(handler, "POST", "/api/imports/extract", cara.cookie, { url: "https://listing.example/unit" });
+        const shared = await call(handler, "POST", "/api/imports/confirm", cara.cookie, {
+            draftId: added.body.draftId,
+            idempotencyKey: "cara-key-1",
+            confirmed: true,
+            fields: { ...added.body.fields, city: "Sunnyvale", title: "Cara listing" },
+            sourceUrl: added.body.sourceUrl,
+        });
+        expect(shared.status).toBe(200);
+        expect(shared.body.listings).toHaveLength(2);
+        expect((await call(handler, "GET", "/api/imports/saved", ada.cookie)).body.listings).toHaveLength(2);
+        expect((await call(handler, "GET", "/api/session", ada.cookie)).body.inviteCode).toBe(ada.body.inviteCode);
+    });
+
     it("keeps an unreadable link for manual entry and does not save a partial listing", async () => {
         const repository = createMemoryRepository();
         repository.saveImport = async () => {
@@ -114,10 +169,13 @@ async function testHandler(repository, fetchPage) {
     });
 }
 
-async function session(handler, pathname = "/api/session") {
+async function session(handler, pathname = "/api/session", body) {
+    const payload = pathname === "/api/session" ? (body || { name: "Ada" }) : body;
     const response = mockRes();
-    await handler(mockReq("POST", pathname), response);
-    return { cookie: response.headers["set-cookie"].split(";")[0] };
+    await handler(mockReq("POST", pathname, "", payload), response);
+    const raw = response.body || "";
+    const text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
+    return { cookie: response.headers["set-cookie"].split(";")[0], body: text ? JSON.parse(text) : {} };
 }
 
 async function call(handler, method, pathname, cookie, body) {
@@ -126,7 +184,8 @@ async function call(handler, method, pathname, cookie, body) {
     const raw = response.body || "";
     const text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
     const json = response.headers["content-type"]?.includes("json");
-    return { status: response.statusCode, body: json && text ? JSON.parse(text) : {}, raw };
+    const nextCookie = response.headers["set-cookie"] ? response.headers["set-cookie"].split(";")[0] : (cookie || "");
+    return { status: response.statusCode, body: json && text ? JSON.parse(text) : {}, raw, cookie: nextCookie };
 }
 
 function mockReq(method, pathname, cookie, body) {
