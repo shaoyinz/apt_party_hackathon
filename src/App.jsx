@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
-import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
+import { postLocation } from "./location/api";
+import { AMENITY_LABELS } from "./location/score";
+import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
+import { useLocationMetrics } from "./useLocationMetrics";
 const store = probeBrowserStore();
 export function App() {
     const initial = loadState(store);
@@ -18,13 +21,32 @@ export function App() {
     }, [state]);
     const parsedBudget = parseBudget(state.budgetText);
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
-    const outcome = useMemo(() => rankListings(LISTINGS, state.area, budget, state.priorities), [state.area, budget, state.priorities]);
+    const location = useLocationMetrics(state, setState, state.view === "results");
+    const outcome = useMemo(() => rankListings(LISTINGS, state.area, budget, state.priorities, {
+        metricsById: location.metricsById,
+        commuteMode: state.travelMode,
+        destinationLabel: location.geocode.place?.label || state.destination.trim(),
+    }), [budget, location.geocode.place, location.metricsById, state.area, state.destination, state.priorities, state.travelMode]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
     const titles = useMemo(() => new Map(LISTINGS.map((listing) => [listing.id, listing.title])), []);
-    const exported = useMemo(() => buildExport(state, titles, matchingIds), [state, titles, matchingIds]);
+    const exported = useMemo(() => buildExport(state, titles, matchingIds, {
+        resolutionStatus: location.geocode.status,
+        listingMetrics: LISTINGS.map((listing) => ({
+            id: listing.id,
+            originPrecision: listing.origin?.precision ?? "missing",
+            commute: location.commute.signature === location.signature
+                ? (location.commute.byId[listing.id] ?? { status: "not_calculated" })
+                : { status: "not_calculated" },
+            convenience: location.amenities.byId[listing.id] ?? { status: "not_calculated" },
+            sources: { commute: location.commute.source, convenience: location.amenities.source },
+        })),
+    }), [location, matchingIds, state, titles]);
     const outside = state.useful.filter((item) => !matchingIds.has(item.id));
     function update(patch) {
         setState((current) => ({ ...current, ...patch }));
+    }
+    function confirmPlace(place) {
+        update({ destination: place.label, confirmedDestination: { query: place.label, place } });
     }
     function onSubmit(event) {
         event.preventDefault();
@@ -75,20 +97,25 @@ export function App() {
         </div>
       </header>
       <p className="banner" role="note">
-        These listings are fixtures, not live availability. Roost is not checking current listings,
-        calculating your route, verifying reviews, or making an AI recommendation. Nothing is sent
+        These listings are fixtures, not live availability. Calculating commute or convenience sends
+        destination and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity
+        services. Transit times are scheduled estimates, not live delays or fares. Nothing is sent
         to the team unless you share an export yourself.
       </p>
       {warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
-        </p>) : (<p className="local-note">Search, shortlist, and feedback stay in this browser only.</p>)}
+        </p>) : (        <p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>)}
 
-      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
+      <p className="attribution">
+        Routing, geocoding, and amenity data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.
+        Transit schedules: VTA and Caltrain GTFS. Driving estimates do not include live traffic.
+      </p>
     </div>);
 }
-function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAdd, onRemove, onMove, onSubmit, }) {
+function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));
     return (<form className="panel" onSubmit={onSubmit} noValidate>
       <h2>Describe your search</h2>
@@ -146,9 +173,9 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAd
       <fieldset>
         <legend>What matters most?</legend>
         <p className="help" id="priority-help">
-          Select one or more, then arrange them from most important to least. Commute uses sample
-          minutes to {DEMO_COMMUTE_DESTINATION}, a fixed demo destination. Your real route is not
-          calculated. Lease flexibility means a listed term of {LEASE_FLEX_MAX_MONTHS} months or less.
+          Select one or more, then arrange them from most important to least. Commute uses the
+          calculated time for the destination below. Convenience is a 0–100 proximity score.
+          Lease flexibility means a listed term of {LEASE_FLEX_MAX_MONTHS} months or less.
         </p>
         <div className="add-row" aria-label="Available priorities">
           {available.map((id) => (<button key={id} type="button" onClick={() => onAdd(id)}>
@@ -182,12 +209,103 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAd
           </p>) : null}
       </fieldset>
 
+      <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
       <button className="primary" type="submit">
         View matches
       </button>
     </form>);
 }
-function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budget, outside, titles, onEdit, onToggle, onNote, onReset, }) {
+function CommuteFields({ state, onDestination, onSelectPlace, onTravelMode, onDeparture }) {
+    return (<fieldset>
+      <legend>Commute destination</legend>
+      <DestinationField value={state.destination} onChange={onDestination} onSelect={onSelectPlace}/>
+      <div className="mode-row" role="radiogroup" aria-label="Travel mode">
+        {TRAVEL_MODES.map((mode) => (<label key={mode} className="choice">
+          <input type="radio" name="travel-mode" checked={state.travelMode === mode} onChange={() => onTravelMode(mode)}/>
+          {TRAVEL_LABELS[mode]}
+        </label>))}
+      </div>
+      {state.travelMode === "transit" ? (<div className="field">
+        <label htmlFor="departure">Departure ({PACIFIC_TZ})</label>
+        <input id="departure" type="datetime-local" value={state.transitDeparture} onChange={(event) => onDeparture(event.target.value)} aria-describedby="departure-help"/>
+        <p id="departure-help" className="help">
+          Required for public transit. This is America/Los_Angeles time, not the browser timezone.
+          Initial coverage is scheduled VTA and Caltrain service.
+        </p>
+      </div>) : (<p className="help">Driving estimates do not include live traffic. Cycling and walking use OSM street routes.</p>)}
+    </fieldset>);
+}
+function DestinationField({ value, onChange, onSelect }) {
+    const [open, setOpen] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [active, setActive] = useState(-1);
+    const [note, setNote] = useState("");
+    const request = useRef(0);
+    const selected = useRef("");
+    useEffect(() => {
+        if (value === selected.current || value.trim().length < 2) {
+            setSuggestions([]);
+            setOpen(false);
+            setNote("");
+            return undefined;
+        }
+        const id = request.current + 1;
+        request.current = id;
+        const timer = setTimeout(() => {
+            postLocation("/api/location/suggest", { query: value.trim() }).then((result) => {
+                if (id !== request.current)
+                    return;
+                const next = result.suggestions ?? [];
+                setSuggestions(next);
+                setOpen(next.length > 0);
+                setActive(-1);
+                setNote(result.status === "provider_failure" ? result.message : "");
+            });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [value]);
+    function choose(place) {
+        selected.current = place.label;
+        setOpen(false);
+        setSuggestions([]);
+        onSelect(place);
+    }
+    function onKeyDown(event) {
+        if (!open)
+            return;
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setActive((current) => Math.min(suggestions.length - 1, current + 1));
+        }
+        else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((current) => Math.max(0, current - 1));
+        }
+        else if (event.key === "Escape") {
+            setOpen(false);
+        }
+        else if (event.key === "Enter" && active >= 0) {
+            event.preventDefault();
+            choose(suggestions[active]);
+        }
+    }
+    return (<div className="field suggest">
+      <label htmlFor="destination">Where are you commuting?</label>
+      <input id="destination" name="destination" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls="destination-suggestions" aria-activedescendant={active >= 0 ? `destination-option-${active}` : undefined} value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={onKeyDown} onBlur={() => setTimeout(() => setOpen(false), 150)} autoComplete="off" aria-describedby="destination-help"/>
+      {open ? (<ul id="destination-suggestions" role="listbox" className="suggest-list">
+        {suggestions.map((place, index) => (<li key={`${place.label}-${place.lat}`} id={`destination-option-${index}`} role="option" aria-selected={index === active}>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => choose(place)}>
+            {place.label}
+          </button>
+        </li>))}
+      </ul>) : null}
+      <p id="destination-help" className="help">
+        Suggestions come from OpenStreetMap as you type. Choosing one confirms that place. Typed text is sent for suggestions; coordinates are sent when you view matches.
+      </p>
+      {note ? <p className="error" role="status">{note}</p> : null}
+    </div>);
+}
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, budget, outside, titles, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, }) {
     const parsed = parseBudget(state.budgetText);
     return (<section className="panel" aria-labelledby="results-heading">
       <div className="results-head">
@@ -221,8 +339,11 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
       </dl>
       <p className="help">
         Bedroom count is a size fact only. It does not mean a listing fits your household. The first
-        priority has the strongest effect on order. Sample commute estimates use {DEMO_COMMUTE_DESTINATION}.
+        priority has the strongest effect on order. Unavailable commute or convenience scores add
+        nothing and are not called a match.
       </p>
+      <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
+      <LocationStatus location={location}/>
       {state.priorities.length === 0 ? (<div className="empty" role="status">
           <p>Choose at least one priority before Roost ranks sample listings.</p>
           <button type="button" className="primary" onClick={onEdit}>
@@ -243,7 +364,7 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
             Edit search
           </button>
         </div>) : (<ol className="cards">
-          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} useful={state.useful.find((entry) => entry.id === item.listing.id)} onToggle={onToggle} onNote={onNote}/>))}
+          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} commute={location.commute.byId[item.listing.id]} convenience={location.amenities.byId[item.listing.id]} commutePhase={location.commute.status} amenityPhase={location.amenities.status} useful={state.useful.find((entry) => entry.id === item.listing.id)} onToggle={onToggle} onNote={onNote} onRetry={location.retryAll}/>))}
         </ol>)}
       {excludedUnknownRent > 0 ? (<p className="help">
           {excludedUnknownRent} sample listing{excludedUnknownRent === 1 ? "" : "s"} in this area
@@ -268,7 +389,22 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
         </section>) : null}
     </section>);
 }
-function ListingCard({ item, rank, useful, onToggle, onNote, }) {
+function LocationStatus({ location }) {
+    const place = location.geocode.place;
+    return (<div className="metric" aria-live="polite">
+      {location.geocode.status === "loading" || location.commute.status === "loading" ? <p>Calculating commute…</p> : null}
+      {location.amenities.status === "loading" ? <p>Calculating convenience…</p> : null}
+      {place ? <p>Destination: {place.label}. {location.commute.source}</p> : null}
+      {location.geocode.message ? <p className="error" role="alert">{location.geocode.message}</p> : null}
+      {location.geocode.status === "ambiguous" ? (<div className="candidates">
+        {location.geocode.candidates.map((candidate) => (<button key={`${candidate.lat},${candidate.lon}`} type="button" onClick={() => location.choosePlace(candidate)}>
+          Use {candidate.label}
+        </button>))}
+      </div>) : null}
+      {location.geocode.status === "provider_failure" || location.commute.status === "provider_failure" || location.amenities.status === "provider_failure" ? (<button type="button" onClick={location.retryAll}>Retry location services</button>) : null}
+    </div>);
+}
+function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPhase, useful, onToggle, onNote, onRetry, }) {
     const listing = item.listing;
     return (<li className="card">
       <div className="card-top">
@@ -305,14 +441,12 @@ function ListingCard({ item, rank, useful, onToggle, onNote, }) {
           <dd>{leaseFact(listing.leaseMonths)}</dd>
         </div>
         <div>
-          <dt>Sample commute</dt>
-          <dd>
-            {listing.commuteMinutes == null
-            ? `Unknown. Estimates, when present, are to ${DEMO_COMMUTE_DESTINATION}.`
-            : `${listing.commuteMinutes} min to ${DEMO_COMMUTE_DESTINATION}`}
-          </dd>
+          <dt>Origin</dt>
+          <dd>{listing.origin ? "Approximate sample origin. Not a verified street address." : "Missing coordinates. Commute and convenience are unavailable."}</dd>
         </div>
       </dl>
+      <MetricBlock title="Commute" metric={commute} phase={commutePhase} onRetry={onRetry} commute/>
+      <ConvenienceBlock metric={convenience} phase={amenityPhase} onRetry={onRetry}/>
       <Explanation title="Matched priorities" items={item.matches} empty="No selected priority is a clear match."/>
       <Explanation title="Tradeoffs" items={item.tradeoffs} empty="No known tradeoff among your priorities."/>
       <Explanation title="Unknown facts" items={item.unknowns} empty="No unknown facts among your priorities."/>
@@ -326,6 +460,48 @@ function ListingCard({ item, rank, useful, onToggle, onNote, }) {
           </div>) : null}
       </div>
     </li>);
+}
+function MetricBlock({ title, metric, phase, onRetry, commute = false }) {
+    const status = metric?.status ?? (phase === "loading" ? "loading" : "not_calculated");
+    return (<div className="metric">
+      <h4>{title}</h4>
+      {status === "ok" && commute ? (<p>
+        {metric.minutes} min {metric.mode || "transit"}
+        {metric.label ? ` · ${metric.label}` : ""}
+        {metric.traffic === false && metric.mode === "driving" ? " · no live traffic" : ""}
+        {metric.transfers != null ? ` · ${metric.transfers} transfer${metric.transfers === 1 ? "" : "s"}` : ""}
+        {metric.lines?.length ? ` · ${metric.lines.join(", ")}` : ""}
+        {metric.departureTime ? ` · departs ${metric.departureTime}` : ""}
+        {metric.arrivalTime ? ` · arrives ${metric.arrivalTime}` : ""}
+      </p>) : null}
+      {status === "ok" && commute && metric.message ? <p className="help">{metric.message}</p> : null}
+      {status === "loading" ? <p>Calculating…</p> : null}
+      {status !== "ok" && status !== "loading" ? (<p>
+        Unavailable{metric?.message ? `: ${metric.message}` : "."}
+        <button type="button" onClick={onRetry}>Retry</button>
+      </p>) : null}
+      {metric?.source ? <p className="help">Source: {metric.source}</p> : null}
+    </div>);
+}
+function ConvenienceBlock({ metric, phase, onRetry }) {
+    const status = metric?.status ?? (phase === "loading" ? "loading" : "not_calculated");
+    return (<div className="metric">
+      <h4>Convenience</h4>
+      {status === "ok" ? (<>
+        <p>{metric.score}/100. {metric.method}</p>
+        <ul>
+          {(metric.categories ?? []).map((category) => (<li key={category.id}>
+            <strong>{category.label || AMENITY_LABELS[category.id]}:</strong>{" "}
+            {category.name ? `${category.name}, ${category.distanceMeters} m, ${Math.round(category.points * 10) / 10} points` : "None within 1 km, 0 points"}
+          </li>))}
+        </ul>
+        <p className="help">{metric.message}</p>
+      </>) : status === "loading" ? <p>Calculating convenience…</p> : (<p>
+        Unavailable{metric?.message ? `: ${metric.message}` : ". An incomplete query is not scored as zero."}
+        <button type="button" onClick={onRetry}>Retry</button>
+      </p>)}
+      {metric?.source ? <p className="help">Source: {metric.source}</p> : null}
+    </div>);
 }
 function Explanation({ title, items, empty, }) {
     return (<div className="explain">
@@ -371,6 +547,16 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
         <div>
           <dt>Total monthly budget</dt>
           <dd>{exported.totalMonthlyBudget == null ? "Not set" : formatMoney(exported.totalMonthlyBudget)}</dd>
+        </div>
+        <div>
+          <dt>Destination</dt>
+          <dd>
+            {exported.commute.resolvedDestination?.label || exported.commute.destination || "Not entered"}
+            {exported.commute.destination ? ` · ${exported.commute.travelMode}` : ""}
+            {exported.commute.travelMode === "transit" && exported.commute.transitDeparture
+              ? ` · departs ${exported.commute.transitDeparture} ${exported.commute.timezone}`
+              : ""}
+          </dd>
         </div>
         <div>
           <dt>Ordered priorities</dt>

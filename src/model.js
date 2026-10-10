@@ -1,5 +1,12 @@
-export const SCHEMA_VERSION = 1;
-export const DEMO_COMMUTE_DESTINATION = "Mountain View Caltrain station";
+export const SCHEMA_VERSION = 2;
+export const PACIFIC_TZ = "America/Los_Angeles";
+export const TRAVEL_MODES = ["driving", "cycling", "walking", "transit"];
+export const TRAVEL_LABELS = {
+    driving: "Driving",
+    cycling: "Cycling",
+    walking: "Walking",
+    transit: "Public transit",
+};
 export const LEASE_FLEX_MAX_MONTHS = 6;
 export const COMMUTE_SCALE_MINUTES = 60;
 export const PRICE_CEILING = 5000;
@@ -7,6 +14,7 @@ export const PRICE_SPAN = 4000;
 export const SPACE_SQFT_SCALE = 1400;
 export const PRIORITY_IDS = [
     "commute",
+    "convenience",
     "price",
     "space",
     "furnished",
@@ -16,6 +24,7 @@ export const PRIORITY_IDS = [
 ];
 export const PRIORITY_LABELS = {
     commute: "Commute",
+    convenience: "Convenience",
     price: "Lower price",
     space: "More space",
     furnished: "Furnished housing",
@@ -43,6 +52,10 @@ export function emptyState() {
         householdSize: null,
         budgetText: "",
         priorities: [],
+        destination: "",
+        travelMode: "driving",
+        transitDeparture: "",
+        confirmedDestination: null,
         useful: [],
         generalFeedback: "",
         view: "setup",
@@ -50,6 +63,9 @@ export function emptyState() {
 }
 export function isPriorityId(value) {
     return PRIORITY_IDS.includes(value);
+}
+export function isTravelMode(value) {
+    return TRAVEL_MODES.includes(value);
 }
 export function normalizeArea(value) {
     return value.trim().toLowerCase().replace(/\s+/g, " ");

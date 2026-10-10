@@ -12,7 +12,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None. Listings are local fixtures.
+None for the page itself. Commute and convenience calls from the running app use the Vite `/api/location` proxy, which needs outbound network access to public OSM and GTFS endpoints. No API keys.
 
 ## Environment prerequisites
 
@@ -40,7 +40,7 @@ The dev server must listen on `127.0.0.1`, not `0.0.0.0`. Vite is configured wit
 
 ## Verification
 
-`GET /` returns 200 and the page title is `Roost — sample housing search`. The area field is `#area`. A search for Sunnyvale with at least one priority shows sample listing cards. No external request is required.
+`GET /` returns 200 and the page title is `Roost — sample housing search`. The area field is `#area`. The destination field is `#destination`. A search for Sunnyvale with at least one priority shows sample listing cards. Commute results appear after a destination is entered; they require the location proxy and outbound network.
 
 ## Quirks and troubleshooting
 
