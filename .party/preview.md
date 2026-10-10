@@ -16,7 +16,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Environment prerequisites
 
-Optional source override: `ROOST_LISTING_SOURCES`. Supabase demo listings need `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. If either name is unset, the page uses local sample fixtures instead of failing to render. Do not put secrets in this file or in `.env`.
+Optional source override: `ROOST_LISTING_SOURCES`. The dev server reads `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for demo listings. Those names are not exposed to the browser. If either is unset, `GET /api/demo-listings` returns a fallback and the page uses local sample fixtures. Do not put secrets in this file or in `.env`.
 
 ## Startup commands
 

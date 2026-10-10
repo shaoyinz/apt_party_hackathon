@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
-import { fetchDemoListings } from "./lib/listings";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
@@ -42,23 +41,20 @@ export function App() {
    useEffect(() => {
     let active = true;
 
-    fetchDemoListings()
-        .then((rows) => {
+    fetch("/api/demo-listings")
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((body) => {
             if (!active) return;
-
-            if (rows.length > 0) {
-                setDemoListings(rows);
+            if (body.status === "database" && body.listings?.length) {
+                setDemoListings(body.listings);
                 setDataStatus("database");
             } else {
                 setDataStatus("fallback");
             }
         })
-        .catch((error) => {
-            console.error("Supabase listings unavailable:", error);
-
-            if (active) {
+        .catch(() => {
+            if (active)
                 setDataStatus("fallback");
-            }
         });
 
     return () => {
