@@ -1,5 +1,7 @@
+
 import { useEffect, useMemo, useState } from "react";
-import { LISTINGS } from "./fixtures";
+import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
+import { fetchDemoListings } from "./lib/listings";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
 import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
@@ -14,6 +16,9 @@ export function App() {
     const [catalog, setCatalog] = useState(null);
     const [catalogError, setCatalogError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
+    const [dataStatus, setDataStatus] = useState("loading");
+    
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
@@ -32,10 +37,44 @@ export function App() {
             cancelled = true;
         };
     }, []);
+   useEffect(() => {
+    let active = true;
+
+    fetchDemoListings()
+        .then((rows) => {
+            if (!active) return;
+
+            if (rows.length > 0) {
+                setDemoListings(rows);
+                setDataStatus("database");
+            } else {
+                setDataStatus("fallback");
+            }
+        })
+        .catch((error) => {
+            console.error("Supabase listings unavailable:", error);
+
+            if (active) {
+                setDataStatus("fallback");
+            }
+        });
+
+    return () => {
+        active = false;
+    };
+   }, []);
+ 
     const parsedBudget = parseBudget(state.budgetText);
+
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
+
     const imported = catalog?.listings ?? [];
-    const listings = useMemo(() => [...LISTINGS, ...imported], [imported]);
+
+    const listings = useMemo(
+      () => [...demoListings, ...imported],
+      [demoListings, imported]
+    );
+
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, state.mode), [listings, state.area, budget, state.priorities, state.mode]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
     const titles = useMemo(() => new Map(listings.map((listing) => [listing.id, listing.title])), [listings]);
@@ -112,6 +151,13 @@ export function App() {
           <h1>Roost</h1>
         </div>
       </header>
+      <p className="local-note" role="status">
+         {dataStatus === "database"
+         ? "Displaying synthetic sample listings loaded from Supabase."
+          : dataStatus === "loading"
+            ? "Loading Supabase demo listings."
+            : "Supabase unavailable; using local sample fixtures."}
+      </p>
       <p className="banner" role="note">
         {importBanner(catalog, catalogError, refreshing)} Roost does not calculate your route, verify
         reviews, or make an AI recommendation. Nothing is sent to the team unless you share an export
