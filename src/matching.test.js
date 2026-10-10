@@ -58,12 +58,26 @@ describe("area and budget filtering", () => {
     });
 });
 describe("ranking", () => {
-    it("flips Sunnyvale order when price and commute swap priority", () => {
-        const priceFirst = rankListings(LISTINGS, "Sunnyvale", null, ["price", "commute"]).eligible.map((item) => item.listing.id);
-        const commuteFirst = rankListings(LISTINGS, "Sunnyvale", null, ["commute", "price"]).eligible.map((item) => item.listing.id);
+    it("flips Sunnyvale order when calculated commute and price swap priority", () => {
+        const metricsById = {
+            "sunnyvale-thrift": { commuteStatus: "ok", commuteMinutes: 46, convenienceStatus: "ok", convenienceScore: 20 },
+            "sunnyvale-close": { commuteStatus: "ok", commuteMinutes: 14, convenienceStatus: "ok", convenienceScore: 80 },
+        };
+        const priceFirst = rankListings(LISTINGS, "Sunnyvale", null, ["price", "commute"], { metricsById }).eligible.map((item) => item.listing.id);
+        const commuteFirst = rankListings(LISTINGS, "Sunnyvale", null, ["commute", "price"], { metricsById }).eligible.map((item) => item.listing.id);
+        const convenienceFirst = rankListings(LISTINGS, "Sunnyvale", null, ["convenience", "price"], { metricsById }).eligible.map((item) => item.listing.id);
         expect(priceFirst[0]).toBe("sunnyvale-thrift");
         expect(commuteFirst[0]).toBe("sunnyvale-close");
+        expect(convenienceFirst[0]).toBe("sunnyvale-close");
         expect(priceFirst).not.toEqual(commuteFirst);
+    });
+    it("does not treat missing calculations or fixture leftovers as a favorable commute", () => {
+        const outcome = rankListings(LISTINGS, "Sunnyvale", null, ["commute", "convenience"]);
+        const close = outcome.eligible.find((item) => item.listing.id === "sunnyvale-close");
+        expect(close?.unknowns.map((item) => item.id)).toEqual(["commute", "convenience"]);
+        expect(close?.matches).toEqual([]);
+        expect(close?.score).toBe(0);
+        expect(LISTINGS.find((listing) => listing.id === "sunnyvale-unknown-rent").coordinates).toBeNull();
     });
     it("repeats an identical search in the same order and breaks ties by id", () => {
         const first = rankListings(LISTINGS, "San Jose", 4000, ["space", "parking"]).eligible.map((item) => item.listing.id);

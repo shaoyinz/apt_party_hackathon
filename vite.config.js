@@ -4,10 +4,11 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { listingsPlugin } from "./server/listingsPlugin.js";
 import { roostApiPlugin } from "./server/attach.js";
+import { locationPlugin } from "./scripts/location/plugin.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const cacheRoot = process.env.XDG_CACHE_HOME;
 export default defineConfig({
-    plugins: [react(), listingsPlugin(root), roostApiPlugin()],
+    plugins: [react(), listingsPlugin(root), locationPlugin(), roostApiPlugin()],
     server: {
         host: "127.0.0.1",
         allowedHosts: true,

@@ -1,4 +1,4 @@
-import { COMMUTE_SCALE_MINUTES, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
+import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, TRAVEL_LABELS, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
 function clamp01(value) {
     return Math.min(1, Math.max(0, value));
 }
@@ -16,12 +16,29 @@ export function withinBudget(listing, budget, mode = "solo") {
         return false;
     return amount <= budget;
 }
-function featureScore(listing, priority, mode) {
+function rankingOptions(modeOrOptions) {
+    if (typeof modeOrOptions === "string")
+        return { mode: modeOrOptions };
+    return { mode: "solo", ...(modeOrOptions ?? {}) };
+}
+function metric(listing, options) {
+    return options.metricsById?.[listing.id] ?? {};
+}
+function featureScore(listing, priority, options) {
+    const mode = options.mode;
     switch (priority) {
-        case "commute":
-            if (listing.commuteMinutes == null)
+        case "commute": {
+            const minutes = metric(listing, options).commuteStatus === "ok" ? metric(listing, options).commuteMinutes : null;
+            if (minutes == null)
                 return 0;
-            return clamp01((COMMUTE_SCALE_MINUTES - listing.commuteMinutes) / COMMUTE_SCALE_MINUTES);
+            return clamp01((COMMUTE_SCALE_MINUTES - minutes) / COMMUTE_SCALE_MINUTES);
+        }
+        case "convenience": {
+            const score = metric(listing, options).convenienceStatus === "ok" ? metric(listing, options).convenienceScore : null;
+            if (score == null)
+                return 0;
+            return clamp01(score / 100);
+        }
         case "price": {
             const amount = applicableMonthlyRent(listing, mode);
             if (amount == null)
@@ -46,22 +63,34 @@ function featureScore(listing, priority, mode) {
             return listing.leaseMonths <= LEASE_FLEX_MAX_MONTHS ? 1 : 0;
     }
 }
-function explain(listing, priority, mode) {
+function explain(listing, priority, options) {
+    const mode = options.mode;
     switch (priority) {
-        case "commute":
-            if (listingOrigin(listing) === "imported") {
-                return { id: priority, detail: "No commute estimate is attached to imported posts." };
+        case "commute": {
+            const current = metric(listing, options);
+            if (current.commuteStatus !== "ok" || current.commuteMinutes == null) {
+                const imported = listingOrigin(listing) === "imported" ? " for this imported post" : "";
+                return { id: priority, detail: `Calculated commute is unavailable${imported} and earns no match.` };
             }
-            if (listing.commuteMinutes == null) {
-                return {
-                    id: priority,
-                    detail: `Sample commute to ${DEMO_COMMUTE_DESTINATION} is unknown and earns no match.`,
-                };
+            const label = TRAVEL_LABELS[options.commuteMode] ?? "selected mode";
+            const destination = options.destinationLabel || "the selected destination";
+            const caveat = options.commuteMode === "driving"
+                ? " OSM driving estimate without live traffic."
+                : options.commuteMode === "transit"
+                    ? " Scheduled transit estimate, not live delays."
+                    : " OSM route estimate.";
+            return { id: priority, detail: `${current.commuteMinutes} min ${label.toLowerCase()} to ${destination}.${caveat}` };
+        }
+        case "convenience": {
+            const current = metric(listing, options);
+            if (current.convenienceStatus !== "ok" || current.convenienceScore == null) {
+                return { id: priority, detail: "Convenience score is unavailable and earns no match." };
             }
             return {
                 id: priority,
-                detail: `Sample estimate ${listing.commuteMinutes} min to ${DEMO_COMMUTE_DESTINATION}. Not a calculated route.`,
+                detail: `Convenience ${current.convenienceScore}/100 from geographic proximity, not a walking route.`,
             };
+        }
         case "price":
 return { id: priority, detail: priceDetail(listing, mode) };
         case "space":
@@ -114,12 +143,14 @@ function priceDetail(listing, mode) {
         return `${formatMoney(listing.rent)} monthly room rent. This is not whole-unit rent.`;
     return `${formatMoney(listing.rent)} total monthly rent.`;
 }
-function isUnknown(listing, priority, mode) {
+function isUnknown(listing, priority, options) {
     switch (priority) {
         case "commute":
-            return listing.commuteMinutes == null;
+            return metric(listing, options).commuteStatus !== "ok";
+        case "convenience":
+            return metric(listing, options).convenienceStatus !== "ok";
         case "price":
-            return applicableMonthlyRent(listing, mode) == null;
+            return applicableMonthlyRent(listing, options.mode) == null;
         case "space":
             return listing.sqft == null && listing.beds == null;
         case "furnished":
@@ -132,12 +163,14 @@ function isUnknown(listing, priority, mode) {
             return listing.leaseMonths == null;
     }
 }
-function isFavorable(listing, priority, mode) {
+function isFavorable(listing, priority, options) {
     switch (priority) {
         case "commute":
-            return listing.commuteMinutes != null && listing.commuteMinutes <= 30;
+            return metric(listing, options).commuteStatus === "ok" && metric(listing, options).commuteMinutes <= 30;
+        case "convenience":
+            return metric(listing, options).convenienceStatus === "ok" && metric(listing, options).convenienceScore >= 50;
         case "price": {
-            const amount = applicableMonthlyRent(listing, mode);
+            const amount = applicableMonthlyRent(listing, options.mode);
             return amount != null && amount <= 3200;
         }
         case "space":
@@ -154,7 +187,9 @@ function isFavorable(listing, priority, mode) {
             return listing.leaseMonths != null && listing.leaseMonths <= LEASE_FLEX_MAX_MONTHS;
     }
 }
-export function rankListings(listings, area, budget, priorities, mode = "solo") {
+export function rankListings(listings, area, budget, priorities, modeOrOptions = {}) {
+    const options = rankingOptions(modeOrOptions);
+    const mode = options.mode;
     const inArea = listings.filter((listing) => listingMatchesArea(listing, area));
     const notComparable = inArea.filter((listing) => budget != null && applicableMonthlyRent(listing, mode) == null);
     const excludedUnknownRent = notComparable.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
@@ -163,15 +198,15 @@ export function rankListings(listings, area, budget, priorities, mode = "solo") 
     const weights = priorities.map((_, index) => priorities.length - index);
     const eligible = eligibleListings
         .map((listing) => {
-        const score = priorities.reduce((total, priority, index) => total + weights[index] * featureScore(listing, priority, mode), 0);
+        const score = priorities.reduce((total, priority, index) => total + weights[index] * featureScore(listing, priority, options), 0);
         const matches = [];
         const tradeoffs = [];
         const unknowns = [];
         for (const priority of priorities) {
-            const item = explain(listing, priority, mode);
-            if (isUnknown(listing, priority, mode))
+            const item = explain(listing, priority, options);
+            if (isUnknown(listing, priority, options))
                 unknowns.push(item);
-            else if (isFavorable(listing, priority, mode))
+            else if (isFavorable(listing, priority, options))
                 matches.push(item);
             else
                 tradeoffs.push(item);

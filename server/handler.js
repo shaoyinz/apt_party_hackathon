@@ -18,7 +18,8 @@ export function createHandler(options) {
     const testResolver = options.testResolver === true;
     return async function handle(req, res) {
         const url = new URL(req.url || "/", "http://127.0.0.1");
-        if (!url.pathname.startsWith("/api/") || url.pathname === "/api/listings" || url.pathname === "/api/listings/refresh")
+        const owned = url.pathname === "/api/health" || url.pathname.startsWith("/api/session") || url.pathname.startsWith("/api/imports");
+        if (!owned)
             return false;
         try {
             if (req.method === "GET" && url.pathname === "/api/health") {

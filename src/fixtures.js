@@ -12,7 +12,7 @@ export const LISTINGS = [
         pets: false,
         parking: true,
         leaseMonths: 12,
-        commuteMinutes: 46,
+        coordinates: { lat: 37.368, lon: -122.036, precision: "approximate" },
     },
     {
         id: "sunnyvale-close",
@@ -27,7 +27,7 @@ export const LISTINGS = [
         pets: true,
         parking: true,
         leaseMonths: 6,
-        commuteMinutes: 14,
+        coordinates: { lat: 37.3789, lon: -122.0315, precision: "approximate" },
     },
     {
         id: "sunnyvale-unknown-rent",
@@ -42,7 +42,7 @@ export const LISTINGS = [
         pets: null,
         parking: null,
         leaseMonths: null,
-        commuteMinutes: null,
+        coordinates: null,
     },
     {
         id: "santa-clara-room",
@@ -57,7 +57,7 @@ export const LISTINGS = [
         pets: false,
         parking: false,
         leaseMonths: 4,
-        commuteMinutes: 28,
+        coordinates: { lat: 37.3493, lon: -121.9394, precision: "approximate" },
     },
     {
         id: "santa-clara-house",
@@ -72,7 +72,7 @@ export const LISTINGS = [
         pets: true,
         parking: true,
         leaseMonths: 12,
-        commuteMinutes: 32,
+        coordinates: { lat: 37.3372, lon: -121.9682, precision: "approximate" },
     },
     {
         id: "mv-castro",
@@ -87,7 +87,7 @@ export const LISTINGS = [
         pets: false,
         parking: false,
         leaseMonths: 12,
-        commuteMinutes: 8,
+        coordinates: { lat: 37.3937, lon: -122.0803, precision: "approximate" },
     },
     {
         id: "mv-furnished",
@@ -102,7 +102,7 @@ export const LISTINGS = [
         pets: null,
         parking: true,
         leaseMonths: 6,
-        commuteMinutes: 18,
+        coordinates: { lat: 37.4105, lon: -122.074, precision: "approximate" },
     },
     {
         id: "cupertino-village",
@@ -117,7 +117,7 @@ export const LISTINGS = [
         pets: true,
         parking: true,
         leaseMonths: 12,
-        commuteMinutes: 22,
+        coordinates: { lat: 37.3234, lon: -122.0145, precision: "approximate" },
     },
     {
         id: "cupertino-studio",
@@ -132,7 +132,7 @@ export const LISTINGS = [
         pets: false,
         parking: false,
         leaseMonths: 3,
-        commuteMinutes: 26,
+        coordinates: { lat: 37.3192, lon: -122.0447, precision: "approximate" },
     },
     {
         id: "sj-santana",
@@ -147,7 +147,7 @@ export const LISTINGS = [
         pets: false,
         parking: true,
         leaseMonths: 12,
-        commuteMinutes: 24,
+        coordinates: { lat: 37.3213, lon: -121.948, precision: "approximate" },
     },
     {
         id: "sj-downtown",
@@ -162,7 +162,7 @@ export const LISTINGS = [
         pets: true,
         parking: false,
         leaseMonths: 6,
-        commuteMinutes: 38,
+        coordinates: { lat: 37.3295, lon: -121.8865, precision: "approximate" },
     },
     {
         id: "sj-unknown-space",
@@ -177,6 +177,6 @@ export const LISTINGS = [
         pets: false,
         parking: true,
         leaseMonths: 12,
-        commuteMinutes: 40,
+        coordinates: { lat: 37.3484, lon: -121.8946, precision: "approximate" },
     },
 ];

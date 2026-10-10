@@ -1,5 +1,3 @@
-import { supabase } from "./supabase";
-
 export const DEMO_GROUP_ID = "d0e00000-0000-4000-8000-000000000001";
 
 function triState(value) {
@@ -35,13 +33,4 @@ export function adaptListing(row) {
   };
 }
 
-export async function fetchDemoListings() {
-  const { data, error } = await supabase
-    .from("listings")
-    .select("id,demo_fixture_id,title,city,neighborhood,price_monthly,beds,sqft,room_type,furnished,pets,parking,lease_months,demo_commute_minutes")
-    .eq("group_id", DEMO_GROUP_ID)
-    .eq("source", "seed")
-    .order("demo_fixture_id");
-  if (error) throw error;
-  return (data ?? []).map(adaptListing);
-}
+
