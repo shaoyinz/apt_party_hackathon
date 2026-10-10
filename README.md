@@ -4,7 +4,7 @@ Scratch version of Roost for solo renters and roommate households. Sample fixtur
 
 ## Status
 
-Runnable local prototype. Craigslist search import is included in the dev server. Commute routing and convenience scores are calculated when the dev server can reach the documented location services. Maps, Telegram, collaboration, and AI reviews are not included.
+Runnable local prototype. Craigslist search import is included in the dev server. A standalone Zillow for-sale scraper lives in `scripts/zillow_scraper.py` and is not imported into rent matching. Commute routing and convenience scores are calculated when the dev server can reach the documented location services. Maps, Telegram, collaboration, and AI reviews are not included.
 
 ## Setup
 
@@ -79,6 +79,58 @@ Craigslist apartment prices are treated as monthly rents. A title that says room
 ### Live check
 
 On 2026-10-10 the fetcher read the South Bay apartments search, retrieved 8 posts, and accepted 8. One source link was `https://www.craigslist.org/view/d/sunnyvale-delightful-home/324Az84i8ksG3ApxZ8Js2c`. Cities included Sunnyvale, Santa Clara, Milpitas, Los Gatos, and San Jose. Two posts had no explicit city and were not assigned South Bay.
+
+## Zillow for-sale scraper
+
+Standalone Python 3 CLI. It does not feed Roost, and a for-sale asking price is not monthly rent. `monthly_rent` in the export is always `null`.
+
+Install and test from this directory:
+
+```bash
+python3 -m pip install -r requirements-zillow.txt
+python3 scripts/test_zillow_scraper.py
+```
+
+Saved HTML needs no network and no API key. This does not fetch Zillow:
+
+```bash
+python3 scripts/zillow_scraper.py --html page.html --output listings.json
+```
+
+Bounded direct fetch of the default Brooklyn for-sale search. Failures print to stderr, exit nonzero, and do not replace an existing `--output` file:
+
+```bash
+python3 scripts/zillow_scraper.py --timeout 20 --limit 40 --output listings.json
+```
+
+Optional Scrapingdog mode calls `https://api.scrapingdog.com/scrape` with `dynamic=false`, as documented by Scrapingdog's Web Scraping API. The key is read from `SCRAPINGDOG_API_KEY` and is never written to the JSON or error text. Missing key is an error. Live provider calls were not run.
+
+```bash
+SCRAPINGDOG_API_KEY="$SCRAPINGDOG_API_KEY" python3 scripts/zillow_scraper.py --provider scrapingdog --timeout 20 --limit 40 --output listings.json
+```
+
+Limits: one search page, timeout 1–60 seconds, at most 100 listings, no pagination, no automatic provider fallback, and no AI-query extraction. Cards are deduped by Zillow property id or listing URL. The same street address with different ids is kept as separate units. Missing price, size, address, or listing URL is `null`.
+
+Output fields: `source`, `listing_kind` (`for_sale`), `price_meaning` (`for_sale_asking_price`), `monthly_rent` (`null`), `data_origin` (`saved_html`, `direct_fetch`, or `scrapingdog`), `live`, `search_url`, `fetched_at`, `http_status`, `status` (`ok` or `empty`), `count`, `truncated`, and `listings`. Each listing has raw `pricing`, `price_type`, readable `size`, `living_area` (not lot size), `address`, `listing_url`, `source`, and `fetched_at`. `live` is true only for a network run. Fixture and saved-HTML output is not live data. `fetched_at` is UTC and is `null` offline.
+
+### Live check
+
+On 2026-10-10T21:16:35Z a bounded direct fetch of `https://www.zillow.com/homes/for_sale/Brooklyn,-New-York,-NY_rb/` used `--timeout 25 --limit 5`. Zillow returned HTTP 403. The CLI exited 1, wrote no JSON, and extracted 0 listings. No listing URL was retrieved. That is a live-ingestion block, not a successful scrape. Fixture tests passed separately and are not live listings. Scrapingdog live verification is untested: this session had no `SCRAPINGDOG_API_KEY`, and no account was created.
+
+### Daily sale cache
+
+This does not change rental search and does not write asking prices into `price_monthly`. Apply `supabase/002_zillow_sale_cache.sql` in the same database as the app. `GET /api/zillow-sales` reads that cache only. It never starts the scraper. A missing database returns `database_unavailable`. No successful snapshot returns `unavailable` with the latest failure. An explicit empty page returns `empty`. Rows older than 24 hours are `stale` and are still returned. Cached responses set `live` to false.
+
+The one-shot job is `node scripts/zillow-refresh.mjs`. It uses the scraper, defaults to 03:00 UTC via `ZILLOW_REFRESH_CRON` (`0 3 * * *`), and does not retry. Overlapping runs record `overlap` and keep the last snapshot. HTTP 403, challenges, truncated pages, and database errors do not clear a prior snapshot. An explicit empty page does.
+
+`deploy/zillow-refresh.cron` is an example. It is not installed here. This repository has no GitHub Actions schedule, `crontab` is not available in this environment, and a local test run is not a production schedule. A daily job also does not unblock the HTTP 403 live fetch.
+
+Verification on 2026-10-10, kept separate:
+
+- Mock database tests in `server/zillowCache.test.js` passed, including failed-refresh preservation and cached reads that do not call the scraper.
+- Real database write/read was not run. `DATABASE_URL` and `PGHOST` are unset, and `node scripts/zillow-refresh.mjs` exited 1 with `missing_database`.
+- The production schedule is not active.
+- Live ingestion was checked again at 2026-10-10T21:37:45Z. Direct fetch returned HTTP 403 and extracted 0 listings. That is still a block, not a successful scrape.
 
 ## Sample limitations
 
