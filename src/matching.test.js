@@ -77,7 +77,7 @@ describe("ranking", () => {
         expect(close?.unknowns.map((item) => item.id)).toEqual(["commute", "convenience"]);
         expect(close?.matches).toEqual([]);
         expect(close?.score).toBe(0);
-        expect(LISTINGS.find((listing) => listing.id === "sunnyvale-unknown-rent").origin).toBeNull();
+        expect(LISTINGS.find((listing) => listing.id === "sunnyvale-unknown-rent").coordinates).toBeNull();
     });
     it("repeats an identical search in the same order and breaks ties by id", () => {
         const first = rankListings(LISTINGS, "San Jose", 4000, ["space", "parking"]).eligible.map((item) => item.listing.id);

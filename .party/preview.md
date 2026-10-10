@@ -1,6 +1,6 @@
 # Local preview
 
-Verified for the Roost prototype in this project directory. No databases, queues, or API credentials are required.
+Verified for the Roost prototype in this project directory. The Vite dev server also exposes `/api/listings`. No database is required. Craigslist refresh needs outbound HTTPS.
 
 ## Dependency setup
 
@@ -12,11 +12,11 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None for the page itself. Commute and convenience calls from the running app use the Vite `/api/location` proxy, which needs outbound network access to public OSM and GTFS endpoints. No API keys.
+`POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Commute and convenience calls use the Vite `/api/location` proxy and need outbound network access to public OSM and GTFS endpoints. No API keys.
 
 ## Environment prerequisites
 
-None for the app. `.env.example` lists `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR` by name only. Party checks may set those variables. Do not put secrets in this file or in `.env`.
+Optional source override: `ROOST_LISTING_SOURCES`. `.env.example` lists `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR` by name only. Do not put secrets in this file or in `.env`.
 
 ## Startup commands
 
@@ -40,7 +40,7 @@ The dev server must listen on `127.0.0.1`, not `0.0.0.0`. Vite is configured wit
 
 ## Verification
 
-`GET /` returns 200 and the page title is `Roost — sample housing search`. The area field is `#area`. The destination field is `#destination`. A search for Sunnyvale with at least one priority shows sample listing cards. Commute results appear after a destination is entered; they require the location proxy and outbound network.
+`GET /` returns 200 and the page title is `Roost — sample housing search`. `GET /api/listings` returns JSON. The area field is `#area`. The destination field is `#destination`. A search for Sunnyvale with at least one priority shows sample listing cards. Commute results appear after a destination is entered and require the location proxy. Craigslist refresh is optional for that check.
 
 ## Quirks and troubleshooting
 

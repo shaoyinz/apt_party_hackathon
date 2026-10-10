@@ -1,4 +1,4 @@
-import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, TRAVEL_LABELS, formatMoney, normalizeArea } from "./model";
+import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, TRAVEL_LABELS, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
 function clamp01(value) {
     return Math.min(1, Math.max(0, value));
 }
@@ -8,17 +8,24 @@ export function listingMatchesArea(listing, area) {
         return false;
     return normalizeArea(listing.city) === query || normalizeArea(listing.neighborhood) === query;
 }
-export function withinBudget(listing, budget) {
+export function withinBudget(listing, budget, mode = "solo") {
     if (budget == null)
         return true;
-    if (listing.rent == null)
+    const amount = applicableMonthlyRent(listing, mode);
+    if (amount == null)
         return false;
-    return listing.rent <= budget;
+    return amount <= budget;
+}
+function rankingOptions(modeOrOptions) {
+    if (typeof modeOrOptions === "string")
+        return { mode: modeOrOptions };
+    return { mode: "solo", ...(modeOrOptions ?? {}) };
 }
 function metric(listing, options) {
     return options.metricsById?.[listing.id] ?? {};
 }
 function featureScore(listing, priority, options) {
+    const mode = options.mode;
     switch (priority) {
         case "commute": {
             const minutes = metric(listing, options).commuteStatus === "ok" ? metric(listing, options).commuteMinutes : null;
@@ -32,10 +39,12 @@ function featureScore(listing, priority, options) {
                 return 0;
             return clamp01(score / 100);
         }
-        case "price":
-            if (listing.rent == null)
+        case "price": {
+            const amount = applicableMonthlyRent(listing, mode);
+            if (amount == null)
                 return 0;
-            return clamp01((PRICE_CEILING - listing.rent) / PRICE_SPAN);
+            return clamp01((PRICE_CEILING - amount) / PRICE_SPAN);
+        }
         case "space":
             if (listing.sqft != null)
                 return clamp01(listing.sqft / SPACE_SQFT_SCALE);
@@ -55,20 +64,22 @@ function featureScore(listing, priority, options) {
     }
 }
 function explain(listing, priority, options) {
+    const mode = options.mode;
     switch (priority) {
         case "commute": {
             const current = metric(listing, options);
             if (current.commuteStatus !== "ok" || current.commuteMinutes == null) {
-                return { id: priority, detail: "Calculated commute is unavailable and earns no match." };
+                const imported = listingOrigin(listing) === "imported" ? " for this imported post" : "";
+                return { id: priority, detail: `Calculated commute is unavailable${imported} and earns no match.` };
             }
-            const mode = TRAVEL_LABELS[options.commuteMode] ?? "selected mode";
+            const label = TRAVEL_LABELS[options.commuteMode] ?? "selected mode";
             const destination = options.destinationLabel || "the selected destination";
             const caveat = options.commuteMode === "driving"
                 ? " OSM driving estimate without live traffic."
                 : options.commuteMode === "transit"
                     ? " Scheduled transit estimate, not live delays."
                     : " OSM route estimate.";
-            return { id: priority, detail: `${current.commuteMinutes} min ${mode.toLowerCase()} to ${destination}.${caveat}` };
+            return { id: priority, detail: `${current.commuteMinutes} min ${label.toLowerCase()} to ${destination}.${caveat}` };
         }
         case "convenience": {
             const current = metric(listing, options);
@@ -81,10 +92,7 @@ function explain(listing, priority, options) {
             };
         }
         case "price":
-            if (listing.rent == null) {
-                return { id: priority, detail: "Total monthly rent is unknown and earns no price match." };
-            }
-            return { id: priority, detail: `${formatMoney(listing.rent)} total monthly rent.` };
+            return { id: priority, detail: priceDetail(listing, mode) };
         case "space":
             if (listing.sqft == null && listing.beds == null) {
                 return { id: priority, detail: "Size is unknown and earns no space match." };
@@ -123,6 +131,18 @@ function explain(listing, priority, options) {
             };
     }
 }
+function priceDetail(listing, mode) {
+    const basis = listingRentBasis(listing);
+    if (listing.rent == null || basis === "unknown")
+        return "Monthly rent is unknown or ambiguous and earns no price match.";
+    if (basis === "nonmonthly")
+        return `${formatMoney(listing.rent)} is not monthly, so it earns no price match and cannot pass a monthly budget.`;
+    if (basis === "monthly-room" && mode !== "solo")
+        return `${formatMoney(listing.rent)} is monthly room rent, not household total rent, so it earns no price match.`;
+    if (basis === "monthly-room")
+        return `${formatMoney(listing.rent)} monthly room rent. This is not whole-unit rent.`;
+    return `${formatMoney(listing.rent)} total monthly rent.`;
+}
 function isUnknown(listing, priority, options) {
     switch (priority) {
         case "commute":
@@ -130,7 +150,7 @@ function isUnknown(listing, priority, options) {
         case "convenience":
             return metric(listing, options).convenienceStatus !== "ok";
         case "price":
-            return listing.rent == null;
+            return applicableMonthlyRent(listing, options.mode) == null;
         case "space":
             return listing.sqft == null && listing.beds == null;
         case "furnished":
@@ -149,8 +169,10 @@ function isFavorable(listing, priority, options) {
             return metric(listing, options).commuteStatus === "ok" && metric(listing, options).commuteMinutes <= 30;
         case "convenience":
             return metric(listing, options).convenienceStatus === "ok" && metric(listing, options).convenienceScore >= 50;
-        case "price":
-            return listing.rent != null && listing.rent <= 3200;
+        case "price": {
+            const amount = applicableMonthlyRent(listing, options.mode);
+            return amount != null && amount <= 3200;
+        }
         case "space":
             if (listing.sqft != null)
                 return listing.sqft >= 800;
@@ -165,10 +187,14 @@ function isFavorable(listing, priority, options) {
             return listing.leaseMonths != null && listing.leaseMonths <= LEASE_FLEX_MAX_MONTHS;
     }
 }
-export function rankListings(listings, area, budget, priorities, options = {}) {
+export function rankListings(listings, area, budget, priorities, modeOrOptions = {}) {
+    const options = rankingOptions(modeOrOptions);
+    const mode = options.mode;
     const inArea = listings.filter((listing) => listingMatchesArea(listing, area));
-    const excludedUnknownRent = inArea.filter((listing) => budget != null && listing.rent == null).length;
-    const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget));
+    const notComparable = inArea.filter((listing) => budget != null && applicableMonthlyRent(listing, mode) == null);
+    const excludedUnknownRent = notComparable.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
+    const excludedInapplicableRent = notComparable.length - excludedUnknownRent;
+    const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget, mode));
     const weights = priorities.map((_, index) => priorities.length - index);
     const eligible = eligibleListings
         .map((listing) => {
@@ -188,5 +214,5 @@ export function rankListings(listings, area, budget, priorities, options = {}) {
         return { listing, score, matches, tradeoffs, unknowns };
     })
         .sort((a, b) => b.score - a.score || a.listing.id.localeCompare(b.listing.id));
-    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent };
+    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent };
 }

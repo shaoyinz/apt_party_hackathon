@@ -27,6 +27,8 @@ describe("feedback export", () => {
         expect(exported).toEqual({
             schemaVersion: SCHEMA_VERSION,
             sampleData: true,
+            includesImportedData: false,
+            liveImport: { status: "not_loaded", importedAt: null, errorCode: null },
             area: "Castro Street",
             huntingMode: "roommates",
             householdSize: 3,
@@ -47,6 +49,8 @@ describe("feedback export", () => {
                     title: "Castro walk-up",
                     note: "Close to the demo station",
                     currentlyMatching: true,
+                    origin: "sample",
+                    sourceUrl: null,
                 },
             ],
             generalFeedback: "Need in-unit laundry",
@@ -68,6 +72,8 @@ describe("feedback export", () => {
                 title: "Maple Court 1BR",
                 note: "",
                 currentlyMatching: false,
+                origin: "sample",
+                sourceUrl: null,
             },
         ]);
         expect(exported.sampleData).toBe(true);
