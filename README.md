@@ -48,6 +48,8 @@ Area matching compares the trimmed, lowercased query, with internal whitespace c
 
 If a total monthly budget is entered, a listing stays only when its known total rent is less than or equal to that amount. Unknown rent never passes a budget ceiling.
 
+Must-haves are separate from ranked priorities. A checked pet, parking, or furnished must-have keeps a listing only when that fact is explicitly true. A minimum bedroom count keeps a listing only when beds are known and at least that count. A maximum commute keeps a listing only when the current calculation is available and at or under that minute ceiling. False and unknown facts do not pass a must-have. Roommate mode can show total rent divided by household size. Minimum beds defaults to the chosen household size when that size is set, and the user can change it. Bedroom count is still not occupancy eligibility.
+
 Selected priorities are weighted from most to least important. With `n` priorities, rank 1 has weight `n`, rank 2 has weight `n - 1`, and the last has weight 1. A listing score is the sum of `weight × feature score`. Feature scores are from 0 to 1:
 
 - **Commute:** 0 when the current calculation is unavailable; otherwise `(60 - minutes) / 60`, clamped. Minutes come only from the current destination and mode. Fixed sample minutes are not a calculation.

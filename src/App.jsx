@@ -4,10 +4,10 @@ import { buildExport } from "./feedback";
 import { ImportFlow } from "./ImportFlow";
 import { loadImports, openImportSession } from "./importApi";
 import { toSearchListing } from "./import/searchShape";
-import { rankListings } from "./matching";
+import { priorityExplanation, rankListings, rankReason } from "./matching";
 import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
-import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
+import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, applicableMonthlyRent, emptyMustHaves, emptyState, formatMoney, formatScore, leaseFact, listingOrigin, offerKindLabel, parseBudget, parseOptionalCount, rentFact, rentPerPerson, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
 import { useLocationMetrics } from "./useLocationMetrics";
 const store = probeBrowserStore();
@@ -23,6 +23,7 @@ const [catalog, setCatalog] = useState(null);
     const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
     const [dataStatus, setDataStatus] = useState("loading");
     const [importOpen, setImportOpen] = useState(false);
+    const [compareOpen, setCompareOpen] = useState(false);
     const [userListings, setUserListings] = useState([]);
     useEffect(() => {
         const next = saveState(store, state);
@@ -88,12 +89,23 @@ const imported = catalog?.listings ?? [];
         return [...demo, ...imported, ...userListings];
     }, [demoListings, imported, userListings]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
-    const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
-        mode: state.mode,
-        metricsById: location.metricsById,
-        commuteMode: state.travelMode,
-        destinationLabel: location.geocode.place?.label || state.destination.trim(),
-    }), [budget, listings, location.geocode.place, location.metricsById, state.area, state.destination, state.mode, state.priorities, state.travelMode]);
+    const outcome = useMemo(() => {
+        const parsedMin = parseOptionalCount(state.minBedsText ?? "");
+        const parsedMax = parseOptionalCount(state.maxCommuteText ?? "");
+        return rankListings(listings, state.area, budget, state.priorities, {
+            mode: state.mode,
+            metricsById: location.metricsById,
+            commuteMode: state.travelMode,
+            destinationLabel: location.geocode.place?.label || state.destination.trim(),
+            mustHaves: {
+                pets: state.mustHaves?.pets === true,
+                parking: state.mustHaves?.parking === true,
+                furnished: state.mustHaves?.furnished === true,
+                minBeds: parsedMin.ok ? parsedMin.value : null,
+                maxCommute: parsedMax.ok ? parsedMax.value : null,
+            },
+        });
+    }, [budget, listings, location.geocode.place, location.metricsById, state.area, state.destination, state.maxCommuteText, state.minBedsText, state.mode, state.mustHaves, state.priorities, state.travelMode]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
     const titles = useMemo(() => new Map(listings.map((listing) => [listing.id, listing.title])), [listings]);
     const exported = useMemo(() => buildExport(state, titles, matchingIds, {
@@ -120,6 +132,20 @@ const imported = catalog?.listings ?? [];
     }
     function confirmPlace(place) {
         update({ destination: place.label, confirmedDestination: { query: place.label, place } });
+    }
+    function onHousehold(householdSize) {
+        setState((current) => {
+            const next = { ...current, householdSize };
+            if (householdSize && (current.minBedsText === "" || current.minBedsText === String(current.householdSize ?? "")))
+                next.minBedsText = String(householdSize);
+            return next;
+        });
+    }
+    function toggleMust(id) {
+        setState((current) => ({
+            ...current,
+            mustHaves: { ...emptyMustHaves(), ...current.mustHaves, [id]: current.mustHaves?.[id] !== true },
+        }));
     }
     function onSubmit(event) {
         event.preventDefault();
@@ -172,6 +198,7 @@ const imported = catalog?.listings ?? [];
         setState(emptyState());
         setErrors({});
         setSubmitted(false);
+        setCompareOpen(false);
         setWarning(nextWarning);
     }
     return (<div className="page">
@@ -203,7 +230,7 @@ const imported = catalog?.listings ?? [];
 {importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
             setUserListings((rows || []).map(toSearchListing));
             setImportOpen(false);
-        }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
+        }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={onHousehold} onBudget={(budgetText) => update({ budgetText })} onToggleMust={toggleMust} onMinBeds={(minBedsText) => update({ minBedsText })} onMaxCommute={(maxCommuteText) => update({ maxCommuteText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} excludedByMustHave={outcome.excludedByMustHave} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onArea={(area) => update({ area })} onBudget={(budgetText) => update({ budgetText })} onToggleMust={toggleMust} onMinBeds={(minBedsText) => update({ minBedsText })} onMaxCommute={(maxCommuteText) => update({ maxCommuteText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} compareOpen={compareOpen} onCompare={() => setCompareOpen((open) => !open)} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
       <p className="attribution">
@@ -212,8 +239,69 @@ const imported = catalog?.listings ?? [];
       </p>
     </div>);
 }
-function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, onImport, }) {
+function MustHaveFields({ state, errors, onToggleMust, onMinBeds, onMaxCommute }) {
+    const flags = { ...emptyMustHaves(), ...state.mustHaves };
+    return (<fieldset>
+      <legend>Must-haves</legend>
+      <p className="help">Checked facts exclude a listing unless they are explicitly true. Unknown does not pass. Minimum beds is a filter you set, not proof the household fits.</p>
+      <label className="choice">
+        <input type="checkbox" checked={flags.pets} onChange={() => onToggleMust("pets")}/>
+        Pet-friendly
+      </label>
+      <label className="choice">
+        <input type="checkbox" checked={flags.parking} onChange={() => onToggleMust("parking")}/>
+        Parking
+      </label>
+      <label className="choice">
+        <input type="checkbox" checked={flags.furnished} onChange={() => onToggleMust("furnished")}/>
+        Furnished
+      </label>
+      <div className="field">
+        <label htmlFor="min-beds">Minimum bedrooms (optional)</label>
+        <input id="min-beds" name="min-beds" inputMode="numeric" value={state.minBedsText ?? ""} onChange={(event) => onMinBeds(event.target.value)} aria-invalid={errors.minBeds ? true : undefined} aria-describedby="min-beds-help min-beds-error" placeholder="No bedroom minimum"/>
+        <p id="min-beds-help" className="help">Blank means no bedroom filter. Roommate mode fills this with household size until you change it.</p>
+        {errors.minBeds ? <p id="min-beds-error" className="error" role="alert">{errors.minBeds}</p> : null}
+      </div>
+      <div className="field">
+        <label htmlFor="max-commute">Maximum commute minutes (optional)</label>
+        <input id="max-commute" name="max-commute" inputMode="numeric" value={state.maxCommuteText ?? ""} onChange={(event) => onMaxCommute(event.target.value)} aria-invalid={errors.maxCommute ? true : undefined} aria-describedby="max-commute-help max-commute-error" placeholder="No commute ceiling"/>
+        <p id="max-commute-help" className="help">Uses the calculated time below. Unavailable commute does not pass a ceiling.</p>
+        {errors.maxCommute ? <p id="max-commute-error" className="error" role="alert">{errors.maxCommute}</p> : null}
+      </div>
+    </fieldset>);
+}
+function PriorityEditor({ state, errors, onAdd, onRemove, onMove }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));
+    return (<fieldset>
+      <legend>What matters most?</legend>
+      <p className="help" id="priority-help">
+        Select one or more, then arrange them from most important to least. Commute uses the
+        calculated time for the destination below. Convenience is a 0–100 proximity score.
+        Lease flexibility means a listed term of {LEASE_FLEX_MAX_MONTHS} months or less.
+      </p>
+      <div className="add-row" aria-label="Available priorities">
+        {available.map((id) => (<button key={id} type="button" onClick={() => onAdd(id)}>
+            Add {PRIORITY_LABELS[id]}
+          </button>))}
+      </div>
+      {state.priorities.length === 0 ? (<p className="help">No priorities selected yet.</p>) : (<ol className="priority-order">
+          {state.priorities.map((id, index) => (<li key={id}>
+              <span className="rank" aria-hidden="true">{index + 1}</span>
+              <span className="priority-name">
+                {PRIORITY_LABELS[id]}
+                <span className="sr-only">, priority {index + 1} of {state.priorities.length}</span>
+              </span>
+              <span className="priority-actions">
+                <button type="button" onClick={() => onMove(index, -1)} disabled={index === 0} aria-label={`Move ${PRIORITY_LABELS[id]} up`}>Up</button>
+                <button type="button" onClick={() => onMove(index, 1)} disabled={index === state.priorities.length - 1} aria-label={`Move ${PRIORITY_LABELS[id]} down`}>Down</button>
+                <button type="button" onClick={() => onRemove(id)} aria-label={`Remove ${PRIORITY_LABELS[id]}`}>Remove</button>
+              </span>
+            </li>))}
+        </ol>)}
+      {errors.priorities ? <p className="error" role="alert">{errors.priorities}</p> : null}
+    </fieldset>);
+}
+function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onToggleMust, onMinBeds, onMaxCommute, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, onImport, }) {
     return (<form className="panel" onSubmit={onSubmit} noValidate>
       <h2>Describe your search</h2>
       <div className="field">
@@ -266,45 +354,8 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDe
             {errors.budget}
           </p>) : null}
       </div>
-
-      <fieldset>
-        <legend>What matters most?</legend>
-        <p className="help" id="priority-help">
-          Select one or more, then arrange them from most important to least. Commute uses the
-          calculated time for the destination below. Convenience is a 0–100 proximity score.
-          Lease flexibility means a listed term of {LEASE_FLEX_MAX_MONTHS} months or less.
-        </p>
-        <div className="add-row" aria-label="Available priorities">
-          {available.map((id) => (<button key={id} type="button" onClick={() => onAdd(id)}>
-              Add {PRIORITY_LABELS[id]}
-            </button>))}
-        </div>
-        {state.priorities.length === 0 ? (<p className="help">No priorities selected yet.</p>) : (<ol className="priority-order">
-            {state.priorities.map((id, index) => (<li key={id}>
-                <span className="rank" aria-hidden="true">
-                  {index + 1}
-                </span>
-                <span className="priority-name">
-                  {PRIORITY_LABELS[id]}
-                  <span className="sr-only">, priority {index + 1} of {state.priorities.length}</span>
-                </span>
-                <span className="priority-actions">
-                  <button type="button" onClick={() => onMove(index, -1)} disabled={index === 0} aria-label={`Move ${PRIORITY_LABELS[id]} up`}>
-                    Up
-                  </button>
-                  <button type="button" onClick={() => onMove(index, 1)} disabled={index === state.priorities.length - 1} aria-label={`Move ${PRIORITY_LABELS[id]} down`}>
-                    Down
-                  </button>
-                  <button type="button" onClick={() => onRemove(id)} aria-label={`Remove ${PRIORITY_LABELS[id]}`}>
-                    Remove
-                  </button>
-                </span>
-              </li>))}
-          </ol>)}
-        {errors.priorities ? (<p className="error" role="alert">
-            {errors.priorities}
-          </p>) : null}
-      </fieldset>
+      <MustHaveFields state={state} errors={errors} onToggleMust={onToggleMust} onMinBeds={onMinBeds} onMaxCommute={onMaxCommute}/>
+      <PriorityEditor state={state} errors={errors} onAdd={onAdd} onRemove={onRemove} onMove={onMove}/>
 
 <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
       <div className="row-actions">
@@ -405,7 +456,7 @@ function DestinationField({ value, onChange, onSelect }) {
       {note ? <p className="error" role="status">{note}</p> : null}
     </div>);
 }
-function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, excludedByMustHave, budget, outside, titles, listings, catalog, catalogError, onEdit, onArea, onBudget, onToggleMust, onMinBeds, onMaxCommute, onAdd, onRemove, onMove, compareOpen, onCompare, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
     const parsed = parseBudget(state.budgetText);
     const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
     const liveFailed = Boolean(catalogError || catalog?.errorCode);
@@ -416,6 +467,7 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
           </button>
+          <button type="button" onClick={onCompare} aria-expanded={compareOpen}>{compareOpen ? "Hide compare" : "Compare useful"}</button>
 <button type="button" onClick={onImport}>Bring your own listing</button>
           <button type="button" onClick={onReset}>
             Reset
@@ -437,14 +489,35 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
         </div>
         <div>
           <dt>Priorities</dt>
-          <dd>{state.priorities.map((id, index) => `${index + 1}. ${PRIORITY_LABELS[id]}`).join(" · ")}</dd>
+          <dd>{state.priorities.map((id, index) => `${index + 1}. ${PRIORITY_LABELS[id]}`).join(" · ") || "None"}</dd>
+        </div>
+        <div>
+          <dt>Must-haves</dt>
+          <dd>{mustHaveSummary(state)}</dd>
         </div>
       </dl>
       <p className="help">
-        Bedroom count is a size fact only. It does not mean a listing fits your household. The first
+        Bedroom count is a size fact only. It does not mean a listing fits your household. Minimum beds is a filter you set. The first
         priority has the strongest effect on order. Unavailable commute or convenience scores add
         nothing and are not called a match. Imported posts without coordinates stay unavailable.
       </p>
+      <fieldset>
+        <legend>Refine this search</legend>
+        <div className="field">
+          <label htmlFor="results-area">Ideal city or neighborhood</label>
+          <input id="results-area" name="results-area" list="area-suggestions" value={state.area} onChange={(event) => onArea(event.target.value)} autoComplete="off"/>
+          <datalist id="area-suggestions">
+            {AREA_SUGGESTIONS.map((suggestion) => (<option key={suggestion} value={suggestion}/>))}
+          </datalist>
+        </div>
+        <div className="field">
+          <label htmlFor="results-budget">Total monthly budget (optional)</label>
+          <input id="results-budget" name="results-budget" inputMode="decimal" value={state.budgetText} onChange={(event) => onBudget(event.target.value)} aria-invalid={liveConstraintErrors(state).budget ? true : undefined} placeholder="Leave blank for no ceiling"/>
+          {liveConstraintErrors(state).budget ? <p className="error" role="alert">{liveConstraintErrors(state).budget}</p> : null}
+        </div>
+      </fieldset>
+      <MustHaveFields state={state} errors={liveConstraintErrors(state)} onToggleMust={onToggleMust} onMinBeds={onMinBeds} onMaxCommute={onMaxCommute}/>
+      <PriorityEditor state={state} errors={{}} onAdd={onAdd} onRemove={onRemove} onMove={onMove}/>
       <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
       <LocationStatus location={location}/>
       {liveFailed ? <p className="warning" role="status">Live import did not succeed. Matching sample cards below are fixtures, not a substitute feed.</p> : null}
@@ -460,16 +533,15 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           </button>
         </div>) : outcomeEligible.length === 0 ? (<div className="empty" role="status">
           <p>
-            No listings in this area
-            {budget != null ? ` are at or under ${formatMoney(budget)} applicable monthly rent` : ""}. Unknown,
-            ambiguous, weekly, and roommate-household room rents are not treated as a passing total.
+            {excludedByMustHave > 0
+              ? `No listings in this area passed the budget and must-haves. ${excludedByMustHave} listing${excludedByMustHave === 1 ? " was" : "s were"} excluded by must-haves. Unknown facts do not pass.`
+              : `No listings in this area${budget != null ? ` are at or under ${formatMoney(budget)} applicable monthly rent` : ""}. Unknown, ambiguous, weekly, and roommate-household room rents are not treated as a passing total.`}
           </p>
-          <button type="button" className="primary" onClick={onEdit}>
-            Edit search
-          </button>
         </div>) : (<ol className="cards">
-          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} commute={location.commute.byId[item.listing.id]} convenience={location.amenities.byId[item.listing.id]} commutePhase={location.commute.status} amenityPhase={location.amenities.status} useful={state.useful.find((entry) => entry.id === item.listing.id)} mode={state.mode} onToggle={onToggle} onNote={onNote} onRetry={location.retryAll}/>))}
+          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} commute={location.commute.byId[item.listing.id]} convenience={location.amenities.byId[item.listing.id]} commutePhase={location.commute.status} amenityPhase={location.amenities.status} useful={state.useful.find((entry) => entry.id === item.listing.id)} mode={state.mode} householdSize={state.mode === "roommates" ? state.householdSize : null} onToggle={onToggle} onNote={onNote} onRetry={location.retryAll}/>))}
         </ol>)}
+      {outcomeEligible.length > 0 && excludedByMustHave > 0 ? (<p className="help">{excludedByMustHave} listing{excludedByMustHave === 1 ? "" : "s"} in this area and budget {excludedByMustHave === 1 ? "was" : "were"} excluded by must-haves. Unknown facts do not pass.</p>) : null}
+      {compareOpen ? <CompareTable state={state} listings={listings} location={location} titles={titles}/> : null}
       {excludedUnknownRent > 0 ? (<p className="help">
           {excludedUnknownRent} listing{excludedUnknownRent === 1 ? "" : "s"} in this area
           {excludedUnknownRent === 1 ? " has" : " have"} unknown or ambiguous rent and {excludedUnknownRent === 1 ? "was" : "were"} left
@@ -506,6 +578,99 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
         </section>) : null}
     </section>);
 }
+function liveConstraintErrors(state) {
+    const errors = {};
+    if (!parseBudget(state.budgetText).ok)
+        errors.budget = "Enter a positive total monthly rent in USD, or leave budget blank.";
+    if (!parseOptionalCount(state.minBedsText ?? "").ok)
+        errors.minBeds = "Enter a positive minimum bedroom count, or leave it blank.";
+    if (!parseOptionalCount(state.maxCommuteText ?? "").ok)
+        errors.maxCommute = "Enter a positive maximum commute in minutes, or leave it blank.";
+    return errors;
+}
+function mustHaveSummary(state) {
+    const flags = { ...emptyMustHaves(), ...state.mustHaves };
+    const parts = [];
+    if (flags.pets)
+        parts.push("pets");
+    if (flags.parking)
+        parts.push("parking");
+    if (flags.furnished)
+        parts.push("furnished");
+    const minBeds = parseOptionalCount(state.minBedsText ?? "");
+    const maxCommute = parseOptionalCount(state.maxCommuteText ?? "");
+    if (minBeds.ok && minBeds.value != null)
+        parts.push(`at least ${minBeds.value} bedrooms`);
+    if (maxCommute.ok && maxCommute.value != null)
+        parts.push(`commute at most ${maxCommute.value} min`);
+    return parts.length ? parts.join(", ") : "None";
+}
+function CompareTable({ state, listings, location, titles }) {
+    if (state.useful.length === 0) {
+        return (<section className="outside" aria-labelledby="compare-heading">
+          <h3 id="compare-heading">Compare useful listings</h3>
+          <div className="empty" role="status">
+            <p>No listings are marked useful yet. Mark one to compare it here, including listings outside this area or budget.</p>
+          </div>
+        </section>);
+    }
+    const columns = state.useful.map((item) => ({
+        item,
+        listing: listings.find((listing) => listing.id === item.id) ?? null,
+        title: titles.get(item.id) ?? item.id,
+    }));
+    const options = {
+        mode: state.mode,
+        metricsById: location.metricsById,
+        commuteMode: state.travelMode,
+        destinationLabel: location.geocode.place?.label || state.destination.trim(),
+    };
+    const householdSize = state.mode === "roommates" ? state.householdSize : null;
+    const rows = [
+        ["Rent", (column) => column.listing ? shortRent(column.listing, state.mode) : "Not in the current catalog"],
+        ["Rent per person", (column) => {
+            if (!column.listing)
+                return "Not in the current catalog";
+            const amount = rentPerPerson(column.listing, householdSize);
+            return amount == null ? "Unknown" : `${formatMoney(amount)} equal split`;
+        }],
+        ["Beds", (column) => column.listing ? (column.listing.beds == null ? "Unknown" : String(column.listing.beds)) : "Not in the current catalog"],
+        ["Pets", (column) => column.listing ? yesNoUnknown(column.listing.pets) : "Not in the current catalog"],
+        ["Parking", (column) => column.listing ? yesNoUnknown(column.listing.parking) : "Not in the current catalog"],
+        ["Furnished", (column) => column.listing ? yesNoUnknown(column.listing.furnished) : "Not in the current catalog"],
+        ["Commute", (column) => commuteCell(location.commute.byId[column.item.id])],
+        ...state.priorities.map((id) => [PRIORITY_LABELS[id], (column) => column.listing ? priorityExplanation(column.listing, id, options).detail : "Not in the current catalog"]),
+    ];
+    return (<section className="outside" aria-labelledby="compare-heading">
+      <h3 id="compare-heading">Compare useful listings</h3>
+      <p className="help">Includes listings marked useful even when they are outside the current area or budget.</p>
+      <div className="compare-wrap">
+        <table className="compare">
+          <thead>
+            <tr>
+              <th scope="col">Fact</th>
+              {columns.map((column) => <th key={column.item.id} scope="col">{column.title}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([label, cell]) => (<tr key={label}>
+              <th scope="row">{label}</th>
+              {columns.map((column) => <td key={column.item.id}>{cell(column)}</td>)}
+            </tr>))}
+          </tbody>
+        </table>
+      </div>
+    </section>);
+}
+function shortRent(listing, mode) {
+    const amount = applicableMonthlyRent(listing, mode);
+    return amount == null ? "Unknown" : formatMoney(amount);
+}
+function commuteCell(metric) {
+    if (!metric || metric.status !== "ok" || metric.minutes == null)
+        return "Unavailable";
+    return `${metric.minutes} min`;
+}
 function LocationStatus({ location }) {
     const place = location.geocode.place;
     return (<div className="metric" aria-live="polite">
@@ -521,15 +686,17 @@ function LocationStatus({ location }) {
       {location.geocode.status === "provider_failure" || location.commute.status === "provider_failure" || location.amenities.status === "provider_failure" ? (<button type="button" onClick={location.retryAll}>Retry location services</button>) : null}
     </div>);
 }
-function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPhase, useful, mode, onToggle, onNote, onRetry, }) {
+function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPhase, useful, mode, householdSize, onToggle, onNote, onRetry, }) {
     const listing = item.listing;
     const importedCard = listingOrigin(listing) === "imported";
     const userProvided = listing.origin === "user-provided";
+    const perPerson = rentPerPerson(listing, householdSize);
     return (<li className="card">
       <div className="card-top">
-<p className="rank-badge">#{rank} {userProvided ? "saved" : importedCard ? "imported" : "sample"}</p>
+<p className="rank-badge">#{rank} {userProvided ? "saved" : importedCard ? "imported" : "sample"} · score {formatScore(item.score)}</p>
         <p className="status">{userProvided ? "User-provided, unverified" : importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
+      <p className="why">{rankReason(item)}</p>
       <h3>{listing.title}</h3>
 {userProvided ? <p className="stamp">{listing.source === "link" ? "From a link" : "From screenshots"}</p> : null}
       <p className="where">
@@ -540,7 +707,7 @@ function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPh
       <dl className="facts">
         <div>
           <dt>Rent</dt>
-          <dd>{rentFact(listing, mode)}</dd>
+          <dd>{rentFact(listing, mode)}{perPerson != null ? ` ${formatMoney(perPerson)} per person, equal split of known total rent.` : ""}</dd>
         </div>
         <div>
           <dt>Beds / room type</dt>
@@ -679,6 +846,10 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
               ? ` · departs ${exported.commute.transitDeparture} ${exported.commute.timezone}`
               : ""}
           </dd>
+        </div>
+        <div>
+          <dt>Must-haves</dt>
+          <dd>{mustHaveSummary(state)}</dd>
         </div>
         <div>
           <dt>Ordered priorities</dt>

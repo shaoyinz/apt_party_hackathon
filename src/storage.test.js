@@ -73,6 +73,9 @@ describe("local persistence", () => {
         expect(loaded.state.destination).toBe("");
         expect(loaded.state.travelMode).toBe("driving");
         expect(loaded.state.confirmedDestination).toBeNull();
+        expect(loaded.state.mustHaves).toEqual({ pets: false, parking: false, furnished: false });
+        expect(loaded.state.minBedsText).toBe("");
+        expect(loaded.state.maxCommuteText).toBe("");
     });
     it("clears stored state on reset", () => {
         const store = memoryStore();

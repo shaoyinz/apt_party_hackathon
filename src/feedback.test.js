@@ -33,6 +33,7 @@ describe("feedback export", () => {
             huntingMode: "roommates",
             householdSize: 3,
             totalMonthlyBudget: 3200,
+            mustHaves: { pets: false, parking: false, furnished: false, minBeds: null, maxCommuteMinutes: null },
             priorities: ["commute", "pets"],
             commute: {
                 destination: "Mountain View Caltrain",

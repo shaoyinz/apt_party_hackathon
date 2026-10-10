@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LISTINGS } from "./fixtures";
-import { rankListings } from "./matching";
+import { mustHaveFailure, rankListings, rankReason } from "./matching";
 import { AREA_SUGGESTIONS, validateSearch } from "./model";
 const cities = ["Sunnyvale", "Santa Clara", "Mountain View", "Cupertino", "San Jose"];
 function draft(overrides = {}) {
@@ -116,6 +116,46 @@ describe("ranking", () => {
             },
         ], "San Jose", null, ["price"]);
         expect(tied.eligible.map((item) => item.listing.id)).toEqual(["a-tie", "b-tie"]);
+    });
+});
+describe("must-haves", () => {
+    it("drops false and unknown pets and reports the exclusion count", () => {
+        const outcome = rankListings(LISTINGS, "Sunnyvale", null, ["price"], {
+            mustHaves: { pets: true, parking: false, furnished: false, minBeds: null, maxCommute: null },
+        });
+        const ids = outcome.eligible.map((item) => item.listing.id);
+        expect(ids).toContain("sunnyvale-close");
+        expect(ids).not.toContain("sunnyvale-thrift");
+        expect(ids).not.toContain("sunnyvale-unknown-rent");
+        expect(outcome.excludedByMustHave).toBeGreaterThan(0);
+        expect(mustHaveFailure(LISTINGS.find((listing) => listing.id === "sunnyvale-thrift"), { pets: true })).toBe("pets");
+        expect(mustHaveFailure(LISTINGS.find((listing) => listing.id === "sunnyvale-unknown-rent"), { pets: true })).toBe("pets");
+    });
+    it("excludes listings that miss a bedroom minimum or an unavailable commute ceiling", () => {
+        const metricsById = {
+            "sunnyvale-thrift": { commuteStatus: "ok", commuteMinutes: 46 },
+            "sunnyvale-close": { commuteStatus: "ok", commuteMinutes: 14 },
+        };
+        const beds = rankListings(LISTINGS, "Sunnyvale", null, ["space"], {
+            mustHaves: { pets: false, parking: false, furnished: false, minBeds: 3, maxCommute: null },
+        });
+        expect(beds.eligible.map((item) => item.listing.id)).toEqual(["sunnyvale-close"]);
+        expect(beds.excludedByMustHave).toBeGreaterThan(0);
+        const commute = rankListings(LISTINGS, "Sunnyvale", null, ["commute"], {
+            metricsById,
+            mustHaves: { pets: false, parking: false, furnished: false, minBeds: null, maxCommute: 30 },
+        });
+        const commuteIds = commute.eligible.map((item) => item.listing.id);
+        expect(commuteIds).toContain("sunnyvale-close");
+        expect(commuteIds).not.toContain("sunnyvale-thrift");
+        expect(commuteIds).not.toContain("sunnyvale-unknown-rent");
+        expect(commute.excludedByMustHave).toBeGreaterThan(0);
+    });
+    it("keeps identical order and explains the top rank", () => {
+        const first = rankListings(LISTINGS, "Sunnyvale", null, ["price", "pets"]);
+        const second = rankListings(LISTINGS, "Sunnyvale", null, ["price", "pets"]);
+        expect(second.eligible.map((item) => item.listing.id)).toEqual(first.eligible.map((item) => item.listing.id));
+        expect(rankReason(first.eligible[0])).toMatch(/Lower price:/);
     });
 });
 describe("validation", () => {
