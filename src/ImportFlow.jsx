@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { cancelImport, confirmImport, extractImport, loadHealth, openImportSession } from "./importApi";
+import { cancelImport, confirmImport, extractImport, loadHealth } from "./importApi";
 import { UPLOAD_LIMITS, UPLOAD_LIMIT_LABEL, FETCH_LIMIT_LABEL } from "./import/limits";
 
 const AMENITIES = [
@@ -8,7 +8,7 @@ const AMENITIES = [
     "Internet included", "Covered parking", "EV charging",
 ];
 
-export function ImportFlow({ onClose, onSaved }) {
+export function ImportFlow({ onClose, onSaved, identity }) {
     const [health, setHealth] = useState(null);
     const [sessionError, setSessionError] = useState("");
     const [url, setUrl] = useState("");
@@ -29,10 +29,6 @@ export function ImportFlow({ onClose, onSaved }) {
                 setHealth(next);
         })
             .catch((error) => {
-            if (!cancelled)
-                setSessionError(error.message);
-        });
-        openImportSession().catch((error) => {
             if (!cancelled)
                 setSessionError(error.message);
         });
@@ -119,12 +115,13 @@ export function ImportFlow({ onClose, onSaved }) {
         <h2 id="import-heading">Bring your own listing</h2>
         <button type="button" onClick={cancel}>Close</button>
       </div>
-      <p className="help">One listing at a time, shared only with your hunting group. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
+      <p className="help">One listing at a time, shared with people who join this page. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
+      {identity ? <p className="local-note">Saving as {identity.name}. User id {identity.userId}.</p> : <p className="warning" role="status">Create your saved-listings page, or join one with an invite code, before adding a listing.</p>}
       {health?.database !== "ok" ? (<p className="warning" role="status">Database save is not available yet{health?.databaseReason ? `: ${health.databaseReason}` : ""}. You can still prepare a draft.</p>) : null}
       {health?.ocr === "unavailable" ? (<p className="warning" role="status">Python OCR is not installed. Run npm run py:sync, or type the facts. Screenshots can still be stored.</p>) : null}
       {sessionError ? <p className="error" role="alert">{sessionError}</p> : null}
       {status ? <p className="local-note" role="status">{status}</p> : null}
-      {phase !== "review" && phase !== "saved" ? (<div>
+      {identity && phase !== "review" && phase !== "saved" ? (<div>
           <div className="field">
             <label htmlFor="listing-url">Listing link</label>
             <input id="listing-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://"/>
@@ -145,7 +142,7 @@ export function ImportFlow({ onClose, onSaved }) {
             <button type="button" disabled={phase === "working"} onClick={() => runExtract(true)}>Enter manually</button>
           </div>
         </div>) : null}
-      {phase === "review" || phase === "saved" ? (<Review fields={fields} setFields={setFields} attributes={attributes} setAttributes={setAttributes} notes={draft?.notes || {}} conflicts={draft?.conflicts || []} previews={previews} url={draft?.sourceUrl || url} confirmed={confirmed} setConfirmed={setConfirmed} onSave={save} onCancel={cancel} busy={phase === "working"} saved={phase === "saved"}/>) : null}
+      {identity && (phase === "review" || phase === "saved") ? (<Review fields={fields} setFields={setFields} attributes={attributes} setAttributes={setAttributes} notes={draft?.notes || {}} conflicts={draft?.conflicts || []} previews={previews} url={draft?.sourceUrl || url} confirmed={confirmed} setConfirmed={setConfirmed} onSave={save} onCancel={cancel} busy={phase === "working"} saved={phase === "saved"}/>) : null}
     </section>);
 }
 

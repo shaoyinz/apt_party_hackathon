@@ -139,6 +139,11 @@ textarea { min-height: 6.5rem; resize: vertical; }
   box-shadow: 6px 6px 0 rgba(28, 23, 18, 0.06);
 }
 
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+
 h2, h3, h4 { font-family: Georgia, "Iowan Old Style", Palatino, serif; }
 
 h2 { margin: 0 0 0.8rem; font-size: 1.7rem; }

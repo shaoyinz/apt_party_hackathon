@@ -11,8 +11,24 @@ export function loadHealth() {
     return request("/api/health");
 }
 
-export function openImportSession() {
-    return request("/api/session", { method: "POST" });
+export function loadSession() {
+    return request("/api/session");
+}
+
+export function createSavedPage(name) {
+    return request("/api/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+    });
+}
+
+export function joinSavedPage(name, inviteCode) {
+    return request("/api/session/join", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, inviteCode }),
+    });
 }
 
 export function loadImports() {
