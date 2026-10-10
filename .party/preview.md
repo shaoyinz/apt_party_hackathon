@@ -16,7 +16,7 @@ None. Listings are local fixtures.
 
 ## Environment prerequisites
 
-None for the app. Party checks may set `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR`. Do not put secrets in this file.
+None for the app. `.env.example` lists `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR` by name only. Party checks may set those variables. Do not put secrets in this file or in `.env`.
 
 ## Startup commands
 
