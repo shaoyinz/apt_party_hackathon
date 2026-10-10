@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cancelImport, confirmImport, extractImport, loadHealth } from "./importApi";
 import { UPLOAD_LIMITS, UPLOAD_LIMIT_LABEL, FETCH_LIMIT_LABEL } from "./import/limits";
 
@@ -9,6 +9,7 @@ const AMENITIES = [
 ];
 
 export function ImportFlow({ onClose, onSaved, identity }) {
+    const panelRef = useRef(null);
     const [health, setHealth] = useState(null);
     const [sessionError, setSessionError] = useState("");
     const [url, setUrl] = useState("");
@@ -21,6 +22,9 @@ export function ImportFlow({ onClose, onSaved, identity }) {
     const [attributes, setAttributes] = useState([]);
     const [confirmed, setConfirmed] = useState(false);
     const [idempotencyKey, setIdempotencyKey] = useState("");
+    useEffect(() => {
+        panelRef.current?.scrollIntoView({ block: "start" });
+    }, []);
     useEffect(() => {
         let cancelled = false;
         loadHealth()
@@ -110,9 +114,9 @@ export function ImportFlow({ onClose, onSaved, identity }) {
         await cancelImport(draft?.draftId).catch(() => undefined);
         onClose();
     }
-    return (<section className="panel" aria-labelledby="import-heading">
+    return (<section className="panel" aria-labelledby="byo-heading" ref={panelRef}>
       <div className="results-head">
-        <h2 id="import-heading">Bring your own listing</h2>
+        <h2 id="byo-heading">Bring your own listing</h2>
         <button type="button" onClick={cancel}>Close</button>
       </div>
       <p className="help">One listing at a time, shared with people who join this page. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
