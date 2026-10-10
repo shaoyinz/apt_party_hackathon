@@ -23,7 +23,11 @@ export function createHandler(options) {
             return false;
         try {
             if (req.method === "GET" && url.pathname === "/api/health") {
-                return send(res, 200, await health(options));
+                const body = await health(options);
+                const strict = process.env.ROOST_STRICT_HEALTH === "true";
+                const databaseRequired = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
+                const unhealthy = strict && (body.ocr !== "available" || (databaseRequired && body.database === "unavailable"));
+                return send(res, unhealthy ? 503 : 200, body);
             }
             if (req.method === "POST" && url.pathname === "/api/session") {
                 const existing = await readSession(req, secret, sessions, options.repository);
