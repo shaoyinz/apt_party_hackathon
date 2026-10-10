@@ -1,0 +1,3 @@
+# Example only. This file is not installed by the repository.
+# Daily at 03:00 UTC. One attempt per invocation; the job does not retry.
+0 3 * * * cd /opt/roost && /usr/bin/node scripts/zillow-refresh.mjs
