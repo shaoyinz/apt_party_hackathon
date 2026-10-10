@@ -336,7 +336,7 @@ function ListingCard({ item, rank, useful, mode, onToggle, onNote, }) {
         {[listing.neighborhood, listing.city].filter(Boolean).join(", ") || "City not stated in the post"}
       </p>
       {importedCard ? <p className="help">{offerKindLabel(listing.offerKind)} from {listing.sourceGroup || "a configured listing source"}. Not verified current availability.{listing.postedAt ? ` Posted ${listing.postedAt}.` : " Post time unknown."}{listing.importedAt ? ` Imported ${formatTimestamp(listing.importedAt)}.` : ""}</p> : null}
-      {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
+      {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">{importedCard ? "View listing" : "View sample source"}</a></p> : null}
       <dl className="facts">
         <div>
           <dt>Rent</dt>
