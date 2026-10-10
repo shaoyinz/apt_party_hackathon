@@ -1,3 +1,5 @@
+import { retainListingSource } from "./sourceLink";
+
 const RAW_LISTINGS = [
     {
         id: "sunnyvale-thrift",
@@ -200,7 +202,7 @@ const SAMPLE_CONTACTS = {
     "cupertino-village": { name: "Sample agent Patel", phone: "(408) 555-0177" },
     "sj-santana": { name: "Sample agent Diaz", phone: "(408) 555-0114" },
 };
-export const LISTINGS = RAW_LISTINGS.map((listing) => ({
+export const LISTINGS = RAW_LISTINGS.map((listing) => retainListingSource({
     ...listing,
     address: null,
     source: "Sample fixture",

@@ -30,6 +30,7 @@ export function adaptListing(row) {
     parking: triState(row.parking),
     leaseMonths: row.lease_months,
     commuteMinutes: row.demo_commute_minutes,
+    sourceUrl: row.source_url || null,
   };
 }
 

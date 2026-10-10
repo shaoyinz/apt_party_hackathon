@@ -9,6 +9,7 @@ import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
 import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
+import { retainListingSource, sourceAction } from "./sourceLink";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
 import { useLocationMetrics } from "./useLocationMetrics";
 const store = probeBrowserStore();
@@ -120,11 +121,11 @@ useEffect(() => {
 const imported = catalog?.listings ?? [];
     const listings = useMemo(() => {
         const coordinatesById = new Map(FALLBACK_LISTINGS.map((listing) => [listing.id, listing.coordinates ?? null]));
-        const demo = demoListings.map((listing) => ({
+        const demo = demoListings.map((listing) => retainListingSource({
             ...listing,
             coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
         }));
-        return [...demo, ...imported, ...userListings];
+        return [...demo, ...imported.map(retainListingSource), ...userListings.map(retainListingSource)];
     }, [demoListings, imported, userListings]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
@@ -593,7 +594,7 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           {(redfinListings || []).filter((listing) => listing.listingType !== "rental").map((listing) => (<li key={listing.id}>
             <p><strong>{listing.title}</strong> <span className="status">For sale</span></p>
             <p>{listing.salePriceText || "Price unknown"} · {listing.roomLabel}</p>
-            {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View on Redfin</a></p> : null}
+            <SourceLink listing={listing}/>
           </li>))}
         </ul>)}
       </section>
@@ -603,7 +604,7 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           <ul>
             {unlocated.map((listing) => (<li key={listing.id}>
                 <p><strong>{listing.title}</strong> <span className="status">Unverified imported offer</span></p>
-                {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
+                <SourceLink listing={listing}/>
               </li>))}
           </ul>
         </section>) : null}
@@ -624,6 +625,15 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           </ul>
         </section>) : null}
     </section>);
+}
+function SourceLink({ listing }) {
+    const action = sourceAction(listing);
+    if (action.kind === "unavailable") {
+        return <p className="source-unavailable">Source unavailable</p>;
+    }
+    return (<p className="source-row">
+      <a className="source-link" href={action.href} target="_blank" rel="noopener noreferrer">{action.label}</a>
+    </p>);
 }
 function LocationStatus({ location }) {
     const place = location.geocode.place;
@@ -656,7 +666,7 @@ function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPh
         {[listing.neighborhood, listing.city].filter(Boolean).join(", ") || "City not stated in the post"}
       </p>
       {importedCard ? <p className="help">{offerKindLabel(listing.offerKind)} from {listing.sourceGroup || "a configured listing source"}. Not verified current availability.{listing.postedAt ? ` Posted ${listing.postedAt}.` : " Post time unknown."}{listing.importedAt ? ` Imported ${formatTimestamp(listing.importedAt)}.` : ""}</p> : null}
-      {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
+      <SourceLink listing={listing}/>
       <dl className="facts">
         <div>
           <dt>{redfinCard ? "For-sale price" : "Rent"}</dt>

@@ -245,6 +245,22 @@ dd { margin: 0.15rem 0 0; }
 
 .where { margin: 0.15rem 0 0.4rem; }
 
+.source-row { margin: 0.35rem 0 0.15rem; }
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--pine);
+  font-weight: 700;
+}
+.source-unavailable {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0.35rem 0 0.15rem;
+  color: var(--muted);
+}
+
 .shots, .import-grid { display: grid; gap: 0.7rem; margin: 0.8rem 0; padding: 0; list-style: none; }
 .shots { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 .shots img { width: 100%; height: 110px; object-fit: cover; background: var(--line); }
