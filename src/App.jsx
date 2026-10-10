@@ -24,6 +24,8 @@ const [catalog, setCatalog] = useState(null);
     const [dataStatus, setDataStatus] = useState("loading");
     const [importOpen, setImportOpen] = useState(false);
     const [userListings, setUserListings] = useState([]);
+    const [redfinListings, setRedfinListings] = useState([]);
+    const [redfinNote, setRedfinNote] = useState("");
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
@@ -75,6 +77,24 @@ useEffect(() => {
             active = false;
         };
     }, []);
+    useEffect(() => {
+        if (state.view !== "results") return undefined;
+        const city = state.area.trim();
+        let active = true;
+        fetch(`/api/redfin-listings?city=${encodeURIComponent(city)}`)
+            .then((response) => response.ok ? response.json() : Promise.reject())
+            .then((body) => {
+            if (!active) return;
+            setRedfinListings(body.listings || []);
+            setRedfinNote(body.message || "");
+        })
+            .catch(() => {
+            if (active) setRedfinNote(`No cached Redfin listings for ${city}. Other cities were not substituted.`);
+        });
+        return () => {
+            active = false;
+        };
+    }, [state.area, state.view]);
     const parsedBudget = parseBudget(state.budgetText);
 
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
@@ -85,8 +105,8 @@ const imported = catalog?.listings ?? [];
             ...listing,
             coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
         }));
-        return [...demo, ...imported, ...userListings];
-    }, [demoListings, imported, userListings]);
+        return [...demo, ...imported, ...userListings, ...redfinListings];
+    }, [demoListings, imported, redfinListings, userListings]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
         mode: state.mode,
@@ -203,7 +223,7 @@ const imported = catalog?.listings ?? [];
 {importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
             setUserListings((rows || []).map(toSearchListing));
             setImportOpen(false);
-        }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
+        }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} excludedForSale={outcome.excludedForSale} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
       <p className="attribution">
@@ -405,7 +425,7 @@ function DestinationField({ value, onChange, onSelect }) {
       {note ? <p className="error" role="status">{note}</p> : null}
     </div>);
 }
-function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, excludedForSale, redfinNote, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
     const parsed = parseBudget(state.budgetText);
     const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
     const liveFailed = Boolean(catalogError || catalog?.errorCode);
@@ -478,6 +498,10 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
       {excludedInapplicableRent > 0 ? (<p className="help">
           {excludedInapplicableRent} listing{excludedInapplicableRent === 1 ? "" : "s"} in this area cannot pass the total budget because the rate is not a comparable monthly total.
         </p>) : null}
+      {redfinNote ? <p className="help">{redfinNote}</p> : null}
+      {excludedForSale > 0 ? (<p className="help">
+          {excludedForSale} cached Redfin listing{excludedForSale === 1 ? "" : "s"} in this area {excludedForSale === 1 ? "is" : "are"} for sale, not monthly rent, so {excludedForSale === 1 ? "it was" : "they were"} left out of the rent budget.
+        </p>) : null}
       {unlocated.length > 0 ? (<section className="outside" aria-labelledby="unlocated-heading">
           <h3 id="unlocated-heading">Imported offers with no explicit city</h3>
           <p className="help">These posts were not assigned a city from the search source.</p>
@@ -524,11 +548,12 @@ function LocationStatus({ location }) {
 function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPhase, useful, mode, onToggle, onNote, onRetry, }) {
     const listing = item.listing;
     const importedCard = listingOrigin(listing) === "imported";
+    const redfinCard = listingOrigin(listing) === "redfin";
     const userProvided = listing.origin === "user-provided";
     return (<li className="card">
       <div className="card-top">
-<p className="rank-badge">#{rank} {userProvided ? "saved" : importedCard ? "imported" : "sample"}</p>
-        <p className="status">{userProvided ? "User-provided, unverified" : importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
+<p className="rank-badge">#{rank} {userProvided ? "saved" : redfinCard ? "for sale" : importedCard ? "imported" : "sample"}</p>
+        <p className="status">{userProvided ? "User-provided, unverified" : redfinCard ? "Redfin for-sale listing. Not monthly rent." : importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
       <h3>{listing.title}</h3>
 {userProvided ? <p className="stamp">{listing.source === "link" ? "From a link" : "From screenshots"}</p> : null}
@@ -539,7 +564,7 @@ function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPh
       {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
       <dl className="facts">
         <div>
-          <dt>Rent</dt>
+          <dt>{redfinCard ? "For-sale price" : "Rent"}</dt>
           <dd>{rentFact(listing, mode)}</dd>
         </div>
         <div>
