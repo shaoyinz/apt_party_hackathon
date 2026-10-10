@@ -1,5 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-vi.mock("./supabase", () => ({ supabase: {} }));
+import { describe, it, expect } from "vitest";
 import { adaptListing } from "./listings";
 describe("Supabase listing adapter", () => {
   it("preserves unknowns and maps demo fields", () => {

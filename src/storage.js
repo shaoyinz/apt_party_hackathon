@@ -1,4 +1,4 @@
-import { emptyState, isPriorityId } from "./model";
+import { emptyState, isPriorityId, isTravelMode } from "./model";
 export const STORAGE_KEY = "roost-prototype-v1";
 const INVALID_WARNING = "Saved search data in this browser was unreadable, so Roost started fresh. New changes can still be saved here.";
 const UNAVAILABLE_WARNING = "This browser is not keeping a saved copy. You can still search and export during this visit. A reload may clear your entries.";
@@ -81,6 +81,10 @@ function parseState(raw) {
             householdSize,
             budgetText: record.budgetText,
             priorities,
+            destination: typeof record.destination === "string" ? record.destination : "",
+            travelMode: isTravelMode(record.travelMode) ? record.travelMode : "driving",
+            transitDeparture: typeof record.transitDeparture === "string" ? record.transitDeparture : "",
+            confirmedDestination: parseConfirmed(record.confirmedDestination),
             useful,
             generalFeedback: record.generalFeedback,
             view,
@@ -103,6 +107,19 @@ function parsePriorities(value) {
     if (!value.every((item) => typeof item === "string" && isPriorityId(item)))
         return null;
     return value;
+}
+function parseConfirmed(value) {
+    if (value == null)
+        return null;
+    if (!value || typeof value !== "object")
+        return null;
+    const record = value;
+    const place = record.place;
+    if (typeof record.query !== "string" || !place || typeof place !== "object")
+        return null;
+    if (typeof place.label !== "string" || !Number.isFinite(place.lat) || !Number.isFinite(place.lon))
+        return null;
+    return { query: record.query, place: { label: place.label, lat: place.lat, lon: place.lon } };
 }
 function parseUseful(value) {
     if (!Array.isArray(value))

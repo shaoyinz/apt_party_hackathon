@@ -11,9 +11,19 @@ describe("feedback export", () => {
             budgetText: "3200",
             priorities: ["commute", "pets"],
             useful: [{ id: "mv-castro", note: "Close to the demo station" }],
+            destination: "Mountain View Caltrain",
+            travelMode: "transit",
+            transitDeparture: "2026-10-12T08:30",
+            confirmedDestination: {
+                query: "Mountain View Caltrain",
+                place: { label: "Mountain View Caltrain", lat: 37.39, lon: -122.07 },
+            },
             generalFeedback: "Need in-unit laundry",
         };
-        const exported = buildExport(state, new Map([["mv-castro", "Castro walk-up"]]), new Set(["mv-castro"]));
+        const exported = buildExport(state, new Map([["mv-castro", "Castro walk-up"]]), new Set(["mv-castro"]), {
+            resolutionStatus: "ok",
+            listingMetrics: [{ id: "mv-castro", originPrecision: "approximate", commute: { status: "ok", minutes: 18 }, convenience: { status: "unavailable" } }],
+        });
         expect(exported).toEqual({
             schemaVersion: SCHEMA_VERSION,
             sampleData: true,
@@ -24,6 +34,15 @@ describe("feedback export", () => {
             householdSize: 3,
             totalMonthlyBudget: 3200,
             priorities: ["commute", "pets"],
+            commute: {
+                destination: "Mountain View Caltrain",
+                travelMode: "transit",
+                transitDeparture: "2026-10-12T08:30",
+                timezone: "America/Los_Angeles",
+                resolvedDestination: { label: "Mountain View Caltrain", lat: 37.39, lon: -122.07 },
+                resolutionStatus: "ok",
+            },
+            listingMetrics: [{ id: "mv-castro", originPrecision: "approximate", commute: { status: "ok", minutes: 18 }, convenience: { status: "unavailable" } }],
             usefulListings: [
                 {
                     id: "mv-castro",
@@ -59,6 +78,9 @@ describe("feedback export", () => {
         ]);
         expect(exported.sampleData).toBe(true);
         expect(exported.schemaVersion).toBe(SCHEMA_VERSION);
+        expect(exported.commute.destination).toBe("");
+        expect(exported.commute.timezone).toBe("America/Los_Angeles");
+        expect(exported.listingMetrics).toEqual([]);
     });
     it("does not invent a budget from an invalid entry", () => {
         const exported = buildExport({ ...emptyState(), budgetText: "0" }, new Map(), new Set());

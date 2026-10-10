@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { demoCatalog } from "./demoListings.js";
 import { applyRefresh, emptySnapshot, publicCatalog, redactSecrets } from "../src/importCache.js";
 import { DEFAULT_LIMITS, resolveSources } from "../src/sources.js";
 
@@ -97,13 +98,19 @@ export function listingsPlugin(root) {
 
   function middleware(req, res, next) {
     const url = req.url?.split("?")[0];
-    if (url !== "/api/listings" && url !== "/api/listings/refresh") return next();
     const send = (status, body) => {
       res.statusCode = status;
       res.setHeader("content-type", "application/json; charset=utf-8");
       res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(body));
     };
+    if (url === "/api/demo-listings" && req.method === "GET") {
+      void demoCatalog()
+        .then((body) => send(200, body))
+        .catch(() => send(200, { status: "fallback", listings: [] }));
+      return;
+    }
+    if (url !== "/api/listings" && url !== "/api/listings/refresh") return next();
     if (url === "/api/listings" && req.method === "GET") {
       send(200, catalog());
       return;

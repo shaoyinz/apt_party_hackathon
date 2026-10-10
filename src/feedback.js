@@ -1,22 +1,29 @@
-import { SCHEMA_VERSION, listingOrigin, parseBudget } from "./model";
+import { PACIFIC_TZ, SCHEMA_VERSION, listingOrigin, parseBudget } from "./model";
 export function buildExport(state, titles, matchingIds, context = {}) {
     const parsed = parseBudget(state.budgetText);
     const listings = context.listings ?? [];
     const byId = new Map(listings.map((listing) => [listing.id, listing]));
-    const usefulListings = state.useful.map((item) => toExportUseful(item, titles, matchingIds, byId));
-    const includesImportedData = listings.some((listing) => listingOrigin(listing) === "imported");
-    const liveImport = context.liveImport ?? { status: "not_loaded", importedAt: null, errorCode: null };
+    const confirmed = state.confirmedDestination?.query === state.destination.trim() ? state.confirmedDestination.place : null;
     return {
         schemaVersion: SCHEMA_VERSION,
         sampleData: true,
-        includesImportedData,
-        liveImport,
+        includesImportedData: listings.some((listing) => listingOrigin(listing) === "imported"),
+        liveImport: context.liveImport ?? { status: "not_loaded", importedAt: null, errorCode: null },
         area: state.area.trim(),
         huntingMode: state.mode,
         householdSize: state.mode === "roommates" ? state.householdSize : null,
         totalMonthlyBudget: parsed.ok ? parsed.budget : null,
         priorities: [...state.priorities],
-        usefulListings,
+        commute: {
+            destination: state.destination.trim(),
+            travelMode: state.travelMode,
+            transitDeparture: state.transitDeparture,
+            timezone: PACIFIC_TZ,
+            resolvedDestination: confirmed,
+            resolutionStatus: context.resolutionStatus ?? "not_calculated",
+        },
+        listingMetrics: context.listingMetrics ?? [],
+        usefulListings: state.useful.map((item) => toExportUseful(item, titles, matchingIds, byId)),
         generalFeedback: state.generalFeedback,
     };
 }

@@ -1,0 +1,12 @@
+export function distanceMeters(a, b) {
+    const radius = 6371000;
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const dLat = lat2 - lat1;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return 2 * radius * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+export function inBayArea(point) {
+    return point.lat >= 37.15 && point.lat <= 37.85 && point.lon >= -122.55 && point.lon <= -121.65;
+}

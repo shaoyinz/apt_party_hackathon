@@ -12,11 +12,11 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`.
+`POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Commute and convenience calls use the Vite `/api/location` proxy and need outbound network access to public OSM and GTFS endpoints. No API keys.
 
 ## Environment prerequisites
 
-Optional source override: `ROOST_LISTING_SOURCES`. `.env.example` lists `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR` by name only. Do not put secrets in this file or in `.env`.
+Optional source override: `ROOST_LISTING_SOURCES`. The dev server reads `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for demo listings. Those names are not exposed to the browser. If either is unset, `GET /api/demo-listings` returns a fallback and the page uses local sample fixtures. Do not put secrets in this file or in `.env`.
 
 ## Startup commands
 
@@ -40,7 +40,7 @@ The dev server must listen on `127.0.0.1`, not `0.0.0.0`. Vite is configured wit
 
 ## Verification
 
-`GET /` returns 200 and the page title is `Roost — sample housing search`. `GET /api/listings` returns JSON. The area field is `#area`. A search for Sunnyvale with at least one priority shows sample listing cards. Craigslist refresh is optional for that check.
+`GET /` returns 200 and the page title is `Roost — sample housing search`. `GET /api/listings` returns JSON. The area field is `#area`. The destination field is `#destination`. A search for Sunnyvale with at least one priority shows sample listing cards. Commute results appear after a destination is entered and require the location proxy. Craigslist refresh is optional for that check.
 
 ## Quirks and troubleshooting
 
