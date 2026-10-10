@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LISTINGS } from "./fixtures";
+import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
+import { fetchDemoListings } from "./lib/listings";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
@@ -17,6 +18,9 @@ export function App() {
     const [catalog, setCatalog] = useState(null);
     const [catalogError, setCatalogError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
+    const [dataStatus, setDataStatus] = useState("loading");
+    
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
@@ -35,10 +39,46 @@ export function App() {
             cancelled = true;
         };
     }, []);
+   useEffect(() => {
+    let active = true;
+
+    fetchDemoListings()
+        .then((rows) => {
+            if (!active) return;
+
+            if (rows.length > 0) {
+                setDemoListings(rows);
+                setDataStatus("database");
+            } else {
+                setDataStatus("fallback");
+            }
+        })
+        .catch((error) => {
+            console.error("Supabase listings unavailable:", error);
+
+            if (active) {
+                setDataStatus("fallback");
+            }
+        });
+
+    return () => {
+        active = false;
+    };
+   }, []);
+ 
     const parsedBudget = parseBudget(state.budgetText);
+
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
+
     const imported = catalog?.listings ?? [];
-    const listings = useMemo(() => [...LISTINGS, ...imported], [imported]);
+    const listings = useMemo(() => {
+        const coordinatesById = new Map(FALLBACK_LISTINGS.map((listing) => [listing.id, listing.coordinates ?? null]));
+        const demo = demoListings.map((listing) => ({
+            ...listing,
+            coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
+        }));
+        return [...demo, ...imported];
+    }, [demoListings, imported]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
         mode: state.mode,
@@ -134,6 +174,13 @@ export function App() {
           <h1>Roost</h1>
         </div>
       </header>
+      <p className="local-note" role="status">
+         {dataStatus === "database"
+         ? "Displaying synthetic sample listings loaded from Supabase."
+          : dataStatus === "loading"
+            ? "Loading Supabase demo listings."
+            : "Supabase unavailable; using local sample fixtures."}
+      </p>
       <p className="banner" role="note">
         {importBanner(catalog, catalogError, refreshing)} Calculating commute or convenience sends
         destination and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity

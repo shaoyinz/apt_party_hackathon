@@ -3,4 +3,12 @@ dist
 .cache
 *.local
 .env
+
+# Local secrets and temporary files
+.env.local
+.env.*.local
+.DS_Store
+roost_supabase_integration.zip
+roost_supabase_integration/
+
 data/
