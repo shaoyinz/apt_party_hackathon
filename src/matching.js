@@ -92,7 +92,7 @@ function explain(listing, priority, options) {
             };
         }
         case "price":
-            return { id: priority, detail: priceDetail(listing, mode) };
+return { id: priority, detail: priceDetail(listing, mode) };
         case "space":
             if (listing.sqft == null && listing.beds == null) {
                 return { id: priority, detail: "Size is unknown and earns no space match." };

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
+import { ImportFlow } from "./ImportFlow";
+import { loadImports, openImportSession } from "./importApi";
+import { toSearchListing } from "./import/searchShape";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
@@ -14,19 +17,20 @@ export function App() {
     const [warning, setWarning] = useState(initial.warning);
     const [errors, setErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
-    const [catalog, setCatalog] = useState(null);
+const [catalog, setCatalog] = useState(null);
     const [catalogError, setCatalogError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
     const [dataStatus, setDataStatus] = useState("loading");
-    
+    const [importOpen, setImportOpen] = useState(false);
+    const [userListings, setUserListings] = useState([]);
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
             setWarning(next);
     }, [state]);
     useEffect(() => {
-        let cancelled = false;
+let cancelled = false;
         void loadCatalog().then((next) => {
             if (!cancelled)
                 setCatalog(next);
@@ -34,47 +38,55 @@ export function App() {
             if (!cancelled)
                 setCatalogError("The listing import service did not respond. Sample fixtures are not live results.");
         });
+        openImportSession()
+            .then(() => loadImports())
+            .then((payload) => {
+            if (!cancelled)
+                setUserListings((payload.listings || []).map(toSearchListing));
+        })
+            .catch(() => {
+            if (!cancelled)
+                setUserListings([]);
+        });
         return () => {
             cancelled = true;
         };
     }, []);
-   useEffect(() => {
-    let active = true;
-
-    fetch("/api/demo-listings")
-        .then((response) => response.ok ? response.json() : Promise.reject())
-        .then((body) => {
-            if (!active) return;
+useEffect(() => {
+        let active = true;
+        fetch("/api/demo-listings")
+            .then((response) => response.ok ? response.json() : Promise.reject())
+            .then((body) => {
+            if (!active)
+                return;
             if (body.status === "database" && body.listings?.length) {
                 setDemoListings(body.listings);
                 setDataStatus("database");
-            } else {
+            }
+            else {
                 setDataStatus("fallback");
             }
         })
-        .catch(() => {
+.catch(() => {
             if (active)
                 setDataStatus("fallback");
         });
-
-    return () => {
-        active = false;
-    };
-   }, []);
- 
+        return () => {
+            active = false;
+        };
+    }, []);
     const parsedBudget = parseBudget(state.budgetText);
 
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
-
-    const imported = catalog?.listings ?? [];
+const imported = catalog?.listings ?? [];
     const listings = useMemo(() => {
         const coordinatesById = new Map(FALLBACK_LISTINGS.map((listing) => [listing.id, listing.coordinates ?? null]));
         const demo = demoListings.map((listing) => ({
             ...listing,
             coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
         }));
-        return [...demo, ...imported];
-    }, [demoListings, imported]);
+        return [...demo, ...imported, ...userListings];
+    }, [demoListings, imported, userListings]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
         mode: state.mode,
@@ -188,7 +200,10 @@ export function App() {
           {warning} Saved data stays in this browser only.
         </p>) : (        <p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>)}
 
-      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+{importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(rows) => {
+            setUserListings((rows || []).map(toSearchListing));
+            setImportOpen(false);
+        }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
       <p className="attribution">
@@ -197,7 +212,7 @@ export function App() {
       </p>
     </div>);
 }
-function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, }) {
+function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, onImport, }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));
     return (<form className="panel" onSubmit={onSubmit} noValidate>
       <h2>Describe your search</h2>
@@ -291,10 +306,13 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDe
           </p>) : null}
       </fieldset>
 
-      <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
-      <button className="primary" type="submit">
-        View matches
-      </button>
+<CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
+      <div className="row-actions">
+        <button className="primary" type="submit">
+          View matches
+        </button>
+        <button type="button" onClick={onImport}>Bring your own listing</button>
+      </div>
     </form>);
 }
 function CommuteFields({ state, onDestination, onSelectPlace, onTravelMode, onDeparture }) {
@@ -387,7 +405,7 @@ function DestinationField({ value, onChange, onSelect }) {
       {note ? <p className="error" role="status">{note}</p> : null}
     </div>);
 }
-function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, }) {
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
     const parsed = parseBudget(state.budgetText);
     const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
     const liveFailed = Boolean(catalogError || catalog?.errorCode);
@@ -398,6 +416,7 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
           </button>
+<button type="button" onClick={onImport}>Bring your own listing</button>
           <button type="button" onClick={onReset}>
             Reset
           </button>
@@ -505,12 +524,14 @@ function LocationStatus({ location }) {
 function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPhase, useful, mode, onToggle, onNote, onRetry, }) {
     const listing = item.listing;
     const importedCard = listingOrigin(listing) === "imported";
+    const userProvided = listing.origin === "user-provided";
     return (<li className="card">
       <div className="card-top">
-        <p className="rank-badge">#{rank} {importedCard ? "imported" : "sample"}</p>
-        <p className="status">{importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
+<p className="rank-badge">#{rank} {userProvided ? "saved" : importedCard ? "imported" : "sample"}</p>
+        <p className="status">{userProvided ? "User-provided, unverified" : importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
       <h3>{listing.title}</h3>
+{userProvided ? <p className="stamp">{listing.source === "link" ? "From a link" : "From screenshots"}</p> : null}
       <p className="where">
         {[listing.neighborhood, listing.city].filter(Boolean).join(", ") || "City not stated in the post"}
       </p>

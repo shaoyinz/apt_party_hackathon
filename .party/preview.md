@@ -1,6 +1,6 @@
 # Local preview
 
-Verified for the Roost prototype in this project directory. The Vite dev server also exposes `/api/listings`. No database is required. Craigslist refresh needs outbound HTTPS.
+Verified for the Roost prototype in this project directory. The Vite dev server exposes `/api/listings` for Craigslist import and `/api/imports` for bring-your-own listings. Sample search needs no database. Database and OCR credentials are optional.
 
 ## Dependency setup
 
@@ -12,7 +12,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-`POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Commute and convenience calls use the Vite `/api/location` proxy and need outbound network access to public OSM and GTFS endpoints. No API keys.
+`POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Commute and convenience calls use the Vite `/api/location` proxy and need outbound network access to public OSM and GTFS endpoints. Screenshot OCR is installed with `npm run py:sync`. Optional PostgreSQL when `DATABASE_URL` or `PGHOST` is set. No API keys are required for OSM.
 
 ## Environment prerequisites
 
@@ -20,9 +20,10 @@ Optional source override: `ROOST_LISTING_SOURCES`. The dev server reads `SUPABAS
 
 ## Startup commands
 
-From this project directory, bind localhost only:
+From this project directory, install pinned Python OCR deps, then bind localhost only:
 
 ```bash
+npm run py:sync
 npm run dev -- --host 127.0.0.1 --port <port>
 ```
 

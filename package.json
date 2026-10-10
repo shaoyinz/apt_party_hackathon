@@ -7,11 +7,13 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test": "vitest run",
-    "smoke:location": "node scripts/smoke-location.mjs",
-    "preview": "vite preview --host 127.0.0.1"
+"smoke:location": "node scripts/smoke-location.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "py:sync": "uv sync --frozen"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",
+    "pg": "^8.23.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

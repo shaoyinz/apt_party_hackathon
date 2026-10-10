@@ -7,6 +7,7 @@ const env = {
   ...process.env,
   npm_config_cache: cache,
   NPM_CONFIG_CACHE: cache,
+  UV_CACHE_DIR: process.env.UV_CACHE_DIR || path.join(xdg, "uv"),
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd) {

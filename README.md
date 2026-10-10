@@ -1,6 +1,6 @@
 # Roost interactive prototype
 
-Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship with the app. A dev-server importer can add unverified rental posts from configured Craigslist searches. Commute and convenience calculations use public OpenStreetMap services and published VTA/Caltrain schedules. No API keys are required.
+Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship with the app. A dev-server importer can add unverified Craigslist posts. Bring your own listing can extract a public link or screenshots, then save to PostgreSQL when database credentials are configured. Commute and convenience calculations use public OpenStreetMap services and published VTA/Caltrain schedules. No API keys are required for those location services.
 
 ## Status
 
@@ -12,6 +12,7 @@ From this project directory:
 
 ```bash
 npm ci
+npm run py:sync
 npm run dev
 ```
 
@@ -93,7 +94,9 @@ Download JSON (`roost-search-feedback.json`) is created only when you click Down
 
 ## Deferred integrations
 
-Marketplace, Zillow, Redfin, Facebook group scraping, Telegram, maps, invitations, voting, realtime collaboration, external reviews, shared databases, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+Marketplace, Zillow, Redfin, Facebook group scraping, Telegram, maps, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+
+Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). Sample fixtures and Craigslist imports stay separately labeled.
 
 ## Location services
 

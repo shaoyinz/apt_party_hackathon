@@ -12,3 +12,5 @@ roost_supabase_integration.zip
 roost_supabase_integration/
 
 data/
+*.key
+.venv
