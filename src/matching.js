@@ -187,6 +187,13 @@ function isFavorable(listing, priority, options) {
             return listing.leaseMonths != null && listing.leaseMonths <= LEASE_FLEX_MAX_MONTHS;
     }
 }
+export function preferenceWeightScore(listing, priorities, modeOrOptions = {}) {
+    if (!priorities.length)
+        return null;
+    const options = rankingOptions(modeOrOptions);
+    const weights = priorities.map((_, index) => priorities.length - index);
+    return priorities.reduce((total, priority, index) => total + weights[index] * featureScore(listing, priority, options), 0);
+}
 export function rankListings(listings, area, budget, priorities, modeOrOptions = {}) {
     const options = rankingOptions(modeOrOptions);
     const mode = options.mode;
