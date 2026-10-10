@@ -1,10 +1,10 @@
 # Roost interactive prototype
 
-Scratch version of Roost for solo renters and roommate households. It runs in the browser with sample listings only. No API keys, accounts, or network services are required.
+Scratch version of Roost for solo renters and roommate households. Listings are local fixtures. Commute and convenience calculations use public OpenStreetMap services and published VTA/Caltrain schedules. No API keys are required.
 
 ## Status
 
-Runnable local prototype. Live listing search, maps, Telegram, commute routing, collaboration, and AI reviews are not included.
+Runnable local prototype. Live listing search, maps, Telegram, collaboration, and AI reviews are not included. Commute routing and convenience scores are calculated when the dev server can reach the documented location services.
 
 ## Setup
 
@@ -24,7 +24,13 @@ npm test
 npm run build
 ```
 
-`npm test` checks filtering, ranking, unknown-data handling, export contents, and storage recovery. `npm run build` writes the production bundle to `PARTY_OUTPUT_DIR` when that variable is set, otherwise `dist`.
+`npm test` checks filtering, ranking, unknown-data handling, export contents, storage recovery, convenience scoring, transit duration, and stale requests. `npm run build` writes the production bundle to `PARTY_OUTPUT_DIR` when that variable is set, otherwise `dist`.
+
+```bash
+npm run smoke:location
+```
+
+The smoke check geocodes Mountain View Caltrain, requests an OSM driving route, queries nearby amenities, and plans a scheduled VTA/Caltrain journey from Sunnyvale Station to Mountain View Station for 2026-10-10 09:00 America/Los_Angeles. It downloads GTFS into `GTFS_CACHE_DIR` or `.cache/gtfs` on first use. A static `npm run build` does not include the location proxy; use `npm run dev` for calculations.
 
 ## Scope
 
@@ -43,7 +49,8 @@ If a total monthly budget is entered, a listing stays only when its known total 
 
 Selected priorities are weighted from most to least important. With `n` priorities, rank 1 has weight `n`, rank 2 has weight `n - 1`, and the last has weight 1. A listing score is the sum of `weight × feature score`. Feature scores are from 0 to 1:
 
-- **Commute:** 0 when unknown; otherwise `(60 - minutes) / 60`, clamped. Minutes are sample estimates to Mountain View Caltrain station, not a calculated route.
+- **Commute:** 0 when the current calculation is unavailable; otherwise `(60 - minutes) / 60`, clamped. Minutes come only from the current destination and mode. Fixed sample minutes are not a calculation.
+- **Convenience:** 0 when unavailable; otherwise `score / 100`. The score is the rounded sum of four category contributions, each `25 × max(0, 1 − distanceMeters / 1000)`, using the nearest unique OSM feature. Geographic distance, not a walking route. A failed query is unavailable, not zero.
 - **Lower price:** 0 when rent is unknown; otherwise `(5000 - rent) / 4000`, clamped.
 - **More space:** 0 when both square footage and beds are unknown; otherwise square footage / 1400, or beds / 4 if square footage is missing.
 - **Furnished, pets, parking:** 1 only when the fact is explicitly true. False and unknown score 0.
@@ -55,8 +62,8 @@ A known favorable fact is described as a match. A known unfavorable fact is a tr
 
 Contrasting Sunnyvale fixtures, with no budget:
 
-- `sunnyvale-thrift` (Maple Court 1BR, $2100, 46 min sample commute) ranks first when Lower price is ahead of Commute.
-- `sunnyvale-close` (Murphy Station 3BR, $4300, 14 min sample commute) ranks first when Commute is ahead of Lower price.
+- `sunnyvale-thrift` (Maple Court 1BR, $2100) ranks first when Lower price is ahead of Commute and the calculated commutes are 46 and 14 minutes.
+- `sunnyvale-close` (Murphy Station 3BR, $4300) ranks first when Commute is ahead of Lower price for those same calculated minutes.
 
 ## Sample limitations
 
@@ -68,11 +75,22 @@ Search inputs, useful listings, notes, and general feedback are stored in this b
 
 If storage is unavailable or the saved payload is invalid, Roost keeps working in memory, explains the limitation, and still allows search and export.
 
-Download JSON (`roost-search-feedback.json`) is created only when you click Download JSON. It includes schema version 1, `sampleData: true`, the current area, hunting mode, household size, optional total budget, ordered priorities, useful listing ids, titles, notes, match status, and general feedback. Roost does not submit it. Share the file yourself if the team should see it. PRD edits stay a human decision.
+Download JSON (`roost-search-feedback.json`) is created only when you click Download JSON. It includes schema version 2, `sampleData: true`, the current area, hunting mode, household size, optional total budget, ordered priorities, commute inputs, timezone, metric values and statuses, origin precision, source labels, useful listing ids, titles, notes, match status, and general feedback. Roost does not submit it. Share the file yourself if the team should see it. PRD edits stay a human decision. Older saved browser payloads without commute fields still load.
 
 ## Deferred integrations
 
-Listing ingestion, scraping, screenshots, Telegram, geocoding, maps, real commute calculations, invitations, voting, realtime collaboration, external reviews, shared databases, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+Listing ingestion, scraping, screenshots, Telegram, maps, invitations, voting, realtime collaboration, external reviews, shared databases, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+
+## Location services
+
+The Vite dev server proxies `/api/location/*`. The browser does not hold credentials. Defaults, all public and keyless:
+
+- Geocoding: `https://nominatim.openstreetmap.org`
+- Street routes: `https://router.project-osrm.org` profiles `driving`, `bike`, and `foot`
+- Amenities: Overpass, trying `https://lz4.overpass-api.de/api/interpreter`, then `https://overpass.openstreetmap.fr/api/interpreter`, then `https://overpass.osm.ch/api/interpreter`
+- Transit: local planner using Caltrain GTFS (`https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip`) and VTA GTFS (`https://gtfs.vta.org/gtfs_vta.zip`), plus OSM walking connections from OSRM. At most one transfer. Set `OTP_BASE_URL` to use a local OpenTripPlanner `/otp/routers/default/plan` endpoint instead.
+
+Override names are listed in `.env.example`. Do not commit endpoint credentials or downloaded feeds. First transit request loads GTFS into `.cache/gtfs`. Results are scheduled estimates in America/Los_Angeles. Live delays, fares, and live traffic are not included. Credit [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 
 ## Checks
 

@@ -56,6 +56,24 @@ describe("local persistence", () => {
         expect(saveState(broken, emptyState())).toMatch(/not keeping a saved copy/i);
         expect(loadState(null).warning).toMatch(/not keeping a saved copy/i);
     });
+    it("loads a saved payload from before commute inputs existed", () => {
+        const legacy = {
+            area: "San Jose",
+            mode: "solo",
+            householdSize: null,
+            budgetText: "",
+            priorities: ["price"],
+            useful: [],
+            generalFeedback: "",
+            view: "setup",
+        };
+        const loaded = loadState(memoryStore(JSON.stringify(legacy)));
+        expect(loaded.warning).toBeNull();
+        expect(loaded.state.area).toBe("San Jose");
+        expect(loaded.state.destination).toBe("");
+        expect(loaded.state.travelMode).toBe("driving");
+        expect(loaded.state.confirmedDestination).toBeNull();
+    });
     it("clears stored state on reset", () => {
         const store = memoryStore();
         saveState(store, { ...emptyState(), area: "Cupertino", view: "results" });
