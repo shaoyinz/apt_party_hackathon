@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { LISTINGS } from "./fixtures";
+import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
+import { fetchDemoListings } from "./lib/listings";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
 import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
@@ -11,6 +12,26 @@ export function App() {
     const [warning, setWarning] = useState(initial.warning);
     const [errors, setErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
+    const [listings, setListings] = useState(FALLBACK_LISTINGS);
+    const [dataStatus, setDataStatus] = useState("loading");
+    useEffect(() => {
+        let active = true;
+        fetchDemoListings()
+          .then((rows) => {
+              if (!active) return;
+              if (rows.length === 0) {
+                  setDataStatus("fallback");
+                  return;
+              }
+              setListings(rows);
+              setDataStatus("database");
+          })
+          .catch((error) => {
+              console.error("Supabase listings unavailable:", error);
+              if (active) setDataStatus("fallback");
+          });
+        return () => { active = false; };
+    }, []);
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
@@ -18,9 +39,9 @@ export function App() {
     }, [state]);
     const parsedBudget = parseBudget(state.budgetText);
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
-    const outcome = useMemo(() => rankListings(LISTINGS, state.area, budget, state.priorities), [state.area, budget, state.priorities]);
+    const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities), [listings, state.area, budget, state.priorities]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
-    const titles = useMemo(() => new Map(LISTINGS.map((listing) => [listing.id, listing.title])), []);
+    const titles = useMemo(() => new Map(listings.map((listing) => [listing.id, listing.title])), [listings]);
     const exported = useMemo(() => buildExport(state, titles, matchingIds), [state, titles, matchingIds]);
     const outside = state.useful.filter((item) => !matchingIds.has(item.id));
     function update(patch) {
@@ -74,8 +95,15 @@ export function App() {
           <h1>Roost</h1>
         </div>
       </header>
+      <p className="local-note" role="status">
+        {dataStatus === "database"
+          ? "Displaying synthetic sample listings loaded from Supabase."
+          : dataStatus === "loading"
+            ? "Loading demo listings from Supabase; showing local fixtures meanwhile."
+            : "Supabase demo listings unavailable or empty; showing local sample fixtures."}
+      </p>
       <p className="banner" role="note">
-        These listings are fixtures, not live availability. Roost is not checking current listings,
+        These listings are synthetic examples, not live availability. Roost is not checking current listings,
         calculating your route, verifying reviews, or making an AI recommendation. Nothing is sent
         to the team unless you share an export yourself.
       </p>
