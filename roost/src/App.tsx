@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { LISTINGS } from "./fixtures";
 import { buildExport, type FeedbackExport } from "./feedback";
+import type { PublicCatalog } from "./importCache";
 import { rankListings, type RankedListing } from "./matching";
 import {
   AREA_SUGGESTIONS,
@@ -11,12 +12,16 @@ import {
   emptyState,
   formatMoney,
   leaseFact,
+  listingOrigin,
+  offerKindLabel,
   parseBudget,
+  rentFact,
   validateSearch,
   yesNoUnknown,
   type AppState,
   type FieldErrors,
   type HuntingMode,
+  type Listing,
   type PriorityId,
 } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
@@ -29,26 +34,53 @@ export function App() {
   const [warning, setWarning] = useState<string | null>(initial.warning);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitted, setSubmitted] = useState(false);
+  const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const next = saveState(store, state);
     if (next) setWarning(next);
   }, [state]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void loadCatalog()
+      .then((next) => {
+        if (!cancelled) setCatalog(next);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogError("The listing import service did not respond. Sample fixtures are not live results.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const parsedBudget = parseBudget(state.budgetText);
   const budget = parsedBudget.ok ? parsedBudget.budget : null;
+  const imported = catalog?.listings ?? [];
+  const listings = useMemo(() => [...LISTINGS, ...imported], [imported]);
   const outcome = useMemo(
-    () => rankListings(LISTINGS, state.area, budget, state.priorities),
-    [state.area, budget, state.priorities],
+    () => rankListings(listings, state.area, budget, state.priorities, state.mode),
+    [listings, state.area, budget, state.priorities, state.mode],
   );
   const matchingIds = useMemo(
     () => new Set(outcome.eligible.map((item) => item.listing.id)),
     [outcome],
   );
-  const titles = useMemo(() => new Map(LISTINGS.map((listing) => [listing.id, listing.title])), []);
+  const titles = useMemo(() => new Map(listings.map((listing) => [listing.id, listing.title])), [listings]);
   const exported = useMemo(
-    () => buildExport(state, titles, matchingIds),
-    [state, titles, matchingIds],
+    () =>
+      buildExport(state, titles, matchingIds, {
+        listings,
+        liveImport: {
+          status: catalogError ? "unavailable" : catalog ? catalogStatus(catalog) : "loading",
+          importedAt: catalog?.importedAt ?? null,
+          errorCode: catalog?.errorCode ?? (catalogError ? "unavailable" : null),
+        },
+      }),
+    [state, titles, matchingIds, listings, catalog, catalogError],
   );
   const outside = state.useful.filter((item) => !matchingIds.has(item.id));
 
@@ -89,6 +121,19 @@ export function App() {
     });
   }
 
+  async function refreshImport() {
+    setRefreshing(true);
+    setCatalogError(null);
+    try {
+      const next = await loadCatalog(true);
+      setCatalog(next);
+    } catch {
+      setCatalogError("Refresh failed before a catalog response. Saved listings were not replaced with sample data.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   function reset() {
     if (!window.confirm("Reset this browser's saved search, useful listings, and feedback?")) return;
     const nextWarning = clearState(store);
@@ -101,17 +146,18 @@ export function App() {
   return (
     <div className="page">
       <header className="mast">
-        <p className="stamp">Sample data</p>
+        <p className="stamp">{catalog && imported.length > 0 ? "Imported + sample" : "Sample data"}</p>
         <div>
           <p className="eyebrow">South Bay scratch prototype</p>
           <h1>Roost</h1>
         </div>
       </header>
       <p className="banner" role="note">
-        These listings are fixtures, not live availability. Roost is not checking current listings,
-        calculating your route, verifying reviews, or making an AI recommendation. Nothing is sent
-        to the team unless you share an export yourself.
+        {importBanner(catalog, catalogError, refreshing)} Roost does not calculate your route, verify
+        reviews, or make an AI recommendation. Nothing is sent to the team unless you share an export
+        yourself.
       </p>
+      <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()} />
       {warning ? (
         <p className="warning" role="status">
           {warning} Saved data stays in this browser only.
@@ -139,9 +185,13 @@ export function App() {
           outcomeEligible={outcome.eligible}
           areaKnown={outcome.areaKnown}
           excludedUnknownRent={outcome.excludedUnknownRent}
+          excludedInapplicableRent={outcome.excludedInapplicableRent}
           budget={budget}
           outside={outside}
           titles={titles}
+          listings={listings}
+          catalog={catalog}
+          catalogError={catalogError}
           onEdit={() => update({ view: "setup" })}
           onToggle={toggleUseful}
           onNote={setNote}
@@ -353,9 +403,13 @@ function Results({
   outcomeEligible,
   areaKnown,
   excludedUnknownRent,
+  excludedInapplicableRent,
   budget,
   outside,
   titles,
+  listings,
+  catalog,
+  catalogError,
   onEdit,
   onToggle,
   onNote,
@@ -365,19 +419,27 @@ function Results({
   outcomeEligible: RankedListing[];
   areaKnown: boolean;
   excludedUnknownRent: number;
+  excludedInapplicableRent: number;
   budget: number | null;
   outside: AppState["useful"];
   titles: Map<string, string>;
+  listings: Listing[];
+  catalog: PublicCatalog | null;
+  catalogError: string | null;
   onEdit: () => void;
   onToggle: (id: string) => void;
   onNote: (id: string, note: string) => void;
   onReset: () => void;
 }) {
   const parsed = parseBudget(state.budgetText);
+  const unlocated = listings.filter(
+    (listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood,
+  );
+  const liveFailed = Boolean(catalogError || catalog?.errorCode);
   return (
     <section className="panel" aria-labelledby="results-heading">
       <div className="results-head">
-        <h2 id="results-heading">Sample matches</h2>
+        <h2 id="results-heading">Matches</h2>
         <div className="row-actions">
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
@@ -407,8 +469,14 @@ function Results({
       </dl>
       <p className="help">
         Bedroom count is a size fact only. It does not mean a listing fits your household. The first
-        priority has the strongest effect on order. Sample commute estimates use {DEMO_COMMUTE_DESTINATION}.
+        priority has the strongest effect on order. Sample commute estimates use {DEMO_COMMUTE_DESTINATION}
+        and are not applied to imported posts.
       </p>
+      {liveFailed ? (
+        <p className="warning" role="status">
+          Live import did not succeed. Matching sample cards below are fixtures, not a substitute feed.
+        </p>
+      ) : null}
       {state.priorities.length === 0 ? (
         <div className="empty" role="status">
           <p>Choose at least one priority before Roost ranks sample listings.</p>
@@ -418,7 +486,7 @@ function Results({
         </div>
       ) : !areaKnown ? (
         <div className="empty" role="status">
-          <p>No sample listings for “{state.area.trim()}”. Roost will not substitute a different area.</p>
+          <p>No listings for “{state.area.trim()}”. Roost will not substitute a different area or the Facebook group city.</p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit area
           </button>
@@ -426,9 +494,9 @@ function Results({
       ) : outcomeEligible.length === 0 ? (
         <div className="empty" role="status">
           <p>
-            No sample listings in this area
-            {budget != null ? ` are at or under ${formatMoney(budget)} total monthly rent` : ""}. Unknown
-            rent is not treated as affordable.
+            No listings in this area
+            {budget != null ? ` are at or under ${formatMoney(budget)} applicable monthly rent` : ""}. Unknown,
+            ambiguous, weekly, and roommate-household room rents are not treated as a passing total.
           </p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
@@ -442,6 +510,7 @@ function Results({
               item={item}
               rank={index + 1}
               useful={state.useful.find((entry) => entry.id === item.listing.id)}
+              mode={state.mode}
               onToggle={onToggle}
               onNote={onNote}
             />
@@ -450,10 +519,40 @@ function Results({
       )}
       {excludedUnknownRent > 0 ? (
         <p className="help">
-          {excludedUnknownRent} sample listing{excludedUnknownRent === 1 ? "" : "s"} in this area
-          {excludedUnknownRent === 1 ? " has" : " have"} unknown rent and {excludedUnknownRent === 1 ? "was" : "were"} left
+          {excludedUnknownRent} listing{excludedUnknownRent === 1 ? "" : "s"} in this area
+          {excludedUnknownRent === 1 ? " has" : " have"} unknown or ambiguous rent and {excludedUnknownRent === 1 ? "was" : "were"} left
           out of the budget filter.
         </p>
+      ) : null}
+      {excludedInapplicableRent > 0 ? (
+        <p className="help">
+          {excludedInapplicableRent} listing{excludedInapplicableRent === 1 ? "" : "s"} in this area
+          {excludedInapplicableRent === 1 ? " has" : " have"} a non-monthly rate or room rent that is not the household total, so
+          {excludedInapplicableRent === 1 ? " it was" : " they were"} left out of the total budget filter.
+        </p>
+      ) : null}
+      {unlocated.length > 0 ? (
+        <section className="outside" aria-labelledby="unlocated-heading">
+          <h3 id="unlocated-heading">Imported offers with no explicit city</h3>
+          <p className="help">These posts were not assigned a city from their Facebook group.</p>
+          <ul>
+            {unlocated.map((listing) => (
+              <li key={listing.id}>
+                <p>
+                  <strong>{listing.title}</strong>
+                  <span className="status"> Unverified imported offer</span>
+                </p>
+                {listing.sourceUrl ? (
+                  <p>
+                    <a href={listing.sourceUrl} target="_blank" rel="noreferrer">
+                      View Facebook post
+                    </a>
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       {outside.length > 0 ? (
         <section className="outside" aria-labelledby="outside-heading">
@@ -487,30 +586,48 @@ function ListingCard({
   item,
   rank,
   useful,
+  mode,
   onToggle,
   onNote,
 }: {
   item: RankedListing;
   rank: number;
   useful: AppState["useful"][number] | undefined;
+  mode: HuntingMode;
   onToggle: (id: string) => void;
   onNote: (id: string, note: string) => void;
 }) {
   const listing = item.listing;
+  const imported = listingOrigin(listing) === "imported";
   return (
     <li className="card">
       <div className="card-top">
-        <p className="rank-badge">#{rank} sample</p>
-        <p className="status">{useful ? "Matches current search" : "Sample fixture"}</p>
+        <p className="rank-badge">#{rank} {imported ? "imported" : "sample"}</p>
+        <p className="status">{imported ? "Unverified Facebook offer" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
       <h3>{listing.title}</h3>
       <p className="where">
-        {listing.neighborhood}, {listing.city}
+        {[listing.neighborhood, listing.city].filter(Boolean).join(", ") || "City not stated in the post"}
       </p>
+      {imported ? (
+        <p className="help">
+          {offerKindLabel(listing.offerKind)} from {listing.sourceGroup || "a configured Facebook group"}. Not verified
+          current availability.
+          {listing.postedAt ? ` Posted ${listing.postedAt}.` : " Post time unknown."}
+          {listing.importedAt ? ` Imported ${formatTimestamp(listing.importedAt)}.` : ""}
+        </p>
+      ) : null}
+      {listing.sourceUrl ? (
+        <p>
+          <a href={listing.sourceUrl} target="_blank" rel="noreferrer">
+            View Facebook post
+          </a>
+        </p>
+      ) : null}
       <dl className="facts">
         <div>
-          <dt>Total monthly rent</dt>
-          <dd>{listing.rent == null ? "Unknown" : formatMoney(listing.rent)}</dd>
+          <dt>Rent</dt>
+          <dd>{rentFact(listing, mode)}</dd>
         </div>
         <div>
           <dt>Beds / room type</dt>
@@ -624,7 +741,8 @@ function FeedbackPanel({
         <div>
           <dt>Schema</dt>
           <dd>
-            v{exported.schemaVersion}, sample data
+            v{exported.schemaVersion}, {exported.includesImportedData ? "sample and imported data" : "sample data"}
+            {exported.liveImport.errorCode ? `, live import ${exported.liveImport.status}` : ""}
           </dd>
         </div>
         <div>
@@ -682,6 +800,106 @@ function FeedbackPanel({
       </div>
     </section>
   );
+}
+
+function ImportPanel({
+  catalog,
+  catalogError,
+  refreshing,
+  onRefresh,
+}: {
+  catalog: PublicCatalog | null;
+  catalogError: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="import-heading">
+      <h2 id="import-heading">Facebook group import</h2>
+      <p className="help">
+        Sources are configured server-side. A failed refresh keeps the last successful import. Sample fixtures stay
+        labeled and are not used to fill a failed import.
+      </p>
+      {catalogError ? (
+        <p className="warning" role="alert">
+          {catalogError}
+        </p>
+      ) : null}
+      {!catalog && !catalogError ? <p role="status">Loading import status.</p> : null}
+      {catalog?.error ? (
+        <p className="warning" role="status">
+          {catalog.error}
+          {catalog.stale && catalog.importedAt ? ` Last successful import ${formatTimestamp(catalog.importedAt)}.` : ""}
+        </p>
+      ) : null}
+      {catalog && !catalog.error && catalog.importedAt ? (
+        <p role="status">Last successful import {formatTimestamp(catalog.importedAt)}.</p>
+      ) : null}
+      {catalog && !catalog.listings.length && !catalog.error && catalog.importedAt ? (
+        <p role="status">The last refresh found no accepted rental offers.</p>
+      ) : null}
+      {catalog?.sources.length ? (
+        <ul className="source-list">
+          {catalog.sources.map((source) => (
+            <li key={source.id}>
+              <strong>{source.label}</strong>
+              <span className="status">
+                {" "}
+                {source.status}, retrieved {source.retrieved}, accepted {source.accepted}. {source.message}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="help">
+          Configured groups: {catalog?.configuredSources.map((source) => source.label).join(", ") || "loading"}.
+        </p>
+      )}
+      <button type="button" className="primary" onClick={onRefresh} disabled={refreshing || !catalog}>
+        {refreshing ? "Refreshing import" : "Refresh Facebook listings"}
+      </button>
+    </section>
+  );
+}
+
+function catalogStatus(catalog: PublicCatalog): string {
+  if (catalog.errorCode) return catalog.errorCode;
+  if (catalog.stale) return "stale";
+  if (catalog.importedAt && catalog.listings.length === 0) return "empty";
+  if (catalog.importedAt) return "ok";
+  return "not_imported";
+}
+
+function importBanner(catalog: PublicCatalog | null, catalogError: string | null, refreshing: boolean): string {
+  if (refreshing) return "Refreshing configured Facebook groups. This does not replace saved listings until the fetch finishes.";
+  if (catalogError) return catalogError;
+  if (!catalog) return "Checking the Facebook import status. Sample fixtures are labeled and are not a live feed.";
+  if (catalog.errorCode === "login_challenge" || catalog.errorCode === "checkpoint") {
+    return "Facebook asked for login or a checkpoint. Roost stopped and did not treat that page as an empty feed.";
+  }
+  if (catalog.errorCode === "missing_credentials") {
+    return "Facebook cookies are not available to the server. Sample fixtures are still labeled as samples.";
+  }
+  if (catalog.error) return catalog.error;
+  if (catalog.listings.length > 0) {
+    return "Imported posts are unverified offers from configured Facebook groups. Sample fixtures remain labeled separately.";
+  }
+  return "No imported offers are cached yet. Sample fixtures are labeled and are not live availability.";
+}
+
+function formatTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+async function loadCatalog(refresh = false): Promise<PublicCatalog> {
+  const response = await fetch(refresh ? "/api/listings/refresh" : "/api/listings", {
+    method: refresh ? "POST" : "GET",
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) throw new Error("catalog request failed");
+  return response.json() as Promise<PublicCatalog>;
 }
 
 function downloadJson(json: string) {

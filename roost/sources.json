@@ -1,0 +1,19 @@
+{
+  "groups": [
+    {
+      "id": "1074031543398636",
+      "url": "https://www.facebook.com/groups/1074031543398636",
+      "label": "SCU Apartments and Housing"
+    },
+    {
+      "id": "3146055722075706",
+      "url": "https://www.facebook.com/groups/3146055722075706",
+      "label": "San Jose Apartments and Housing"
+    }
+  ],
+  "limits": {
+    "postsPerGroup": 8,
+    "navigationTimeoutMs": 35000,
+    "minRefreshIntervalMs": 60000
+  }
+}

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const DEMO_COMMUTE_DESTINATION = "Mountain View Caltrain station";
 
@@ -26,6 +26,12 @@ export type PriorityId = (typeof PRIORITY_IDS)[number];
 
 export type HuntingMode = "solo" | "roommates";
 
+export type ListingOrigin = "sample" | "imported";
+
+export type OfferKind = "whole" | "room" | "sublet" | "unknown";
+
+export type RentBasis = "monthly-total" | "monthly-room" | "nonmonthly" | "unknown";
+
 export interface Listing {
   id: string;
   title: string;
@@ -40,6 +46,16 @@ export interface Listing {
   parking: boolean | null;
   leaseMonths: number | null;
   commuteMinutes: number | null;
+  origin?: ListingOrigin;
+  offerKind?: OfferKind;
+  rentBasis?: RentBasis;
+  sourceGroup?: string | null;
+  sourceGroupId?: string | null;
+  sourcePostId?: string | null;
+  sourceUrl?: string | null;
+  postedAt?: string | null;
+  importedAt?: string | null;
+  availability?: string | null;
 }
 
 export interface UsefulSelection {
@@ -163,4 +179,47 @@ export function leaseFact(months: number | null): string {
   if (months == null) return "Unknown";
   if (months <= LEASE_FLEX_MAX_MONTHS) return `${months} months (flexible: six months or less)`;
   return `${months} months (not flexible)`;
+}
+
+export function listingOrigin(listing: Listing): ListingOrigin {
+  return listing.origin ?? "sample";
+}
+
+export function listingRentBasis(listing: Listing): RentBasis {
+  return listing.rentBasis ?? (listingOrigin(listing) === "sample" ? "monthly-total" : "unknown");
+}
+
+export function applicableMonthlyRent(listing: Listing, mode: HuntingMode): number | null {
+  if (listing.rent == null) return null;
+  const basis = listingRentBasis(listing);
+  if (basis === "monthly-total") return listing.rent;
+  if (basis === "monthly-room" && mode === "solo") return listing.rent;
+  return null;
+}
+
+export function offerKindLabel(kind: OfferKind | undefined): string {
+  if (kind === "room") return "Room";
+  if (kind === "sublet") return "Sublet";
+  if (kind === "whole") return "Whole unit";
+  return "Offer type unknown";
+}
+
+export function rentFact(listing: Listing, mode: HuntingMode): string {
+  const basis = listingRentBasis(listing);
+  if (basis === "unknown") {
+    if (listing.rent == null) return "Unknown. Missing or ambiguous rent is not treated as affordable.";
+    return `${formatMoney(listing.rent)} has no explicit monthly whole-unit basis, so it cannot pass a monthly budget.`;
+  }
+  if (listing.rent == null) return "Unknown. Missing or ambiguous rent is not treated as affordable.";
+  const amount = formatMoney(listing.rent);
+  if (basis === "nonmonthly") {
+    return `${amount}, not a monthly rate. It cannot pass a monthly budget.`;
+  }
+  if (basis === "monthly-room") {
+    if (mode === "roommates") {
+      return `${amount} monthly room rent. Not household total rent, so it cannot pass the total budget.`;
+    }
+    return `${amount} monthly room rent. Not whole-unit rent.`;
+  }
+  return `${amount} total monthly rent.`;
 }

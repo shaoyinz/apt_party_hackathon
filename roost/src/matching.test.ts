@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LISTINGS } from "./fixtures";
 import { rankListings } from "./matching";
-import { AREA_SUGGESTIONS, validateSearch, type SearchDraft } from "./model";
+import { AREA_SUGGESTIONS, validateSearch, type Listing, type SearchDraft } from "./model";
 
 const cities = ["Sunnyvale", "Santa Clara", "Mountain View", "Cupertino", "San Jose"];
 
@@ -51,6 +51,7 @@ describe("area and budget filtering", () => {
     expect(ids).not.toContain("sunnyvale-close");
     expect(ids).not.toContain("sunnyvale-unknown-rent");
     expect(capped.excludedUnknownRent).toBe(1);
+    expect(capped.excludedInapplicableRent).toBe(0);
     const unknown = open.eligible.find((item) => item.listing.id === "sunnyvale-unknown-rent");
     expect(unknown?.matches.some((item) => item.id === "price")).toBe(false);
     expect(unknown?.unknowns.some((item) => item.id === "price")).toBe(true);
@@ -62,6 +63,36 @@ describe("area and budget filtering", () => {
     expect(furnished?.unknowns.map((item) => item.id)).toContain("pets");
     expect(furnished?.matches).toEqual([]);
     expect(furnished?.score).toBe(0);
+  });
+});
+
+describe("imported rent basis", () => {
+  const room: Listing = {
+    id: "fb-room",
+    title: "Room",
+    city: "Santa Clara",
+    neighborhood: "",
+    rent: 900,
+    beds: 1,
+    sqft: null,
+    roomLabel: "Private room",
+    furnished: null,
+    pets: null,
+    parking: null,
+    leaseMonths: null,
+    commuteMinutes: null,
+    origin: "imported",
+    offerKind: "room",
+    rentBasis: "monthly-room",
+  };
+
+  it("lets solo hunters compare room rent and does not treat it as a roommate household total", () => {
+    const solo = rankListings([room], "Santa Clara", 1000, ["price"], "solo");
+    expect(solo.eligible.map((item) => item.listing.id)).toEqual(["fb-room"]);
+    expect(solo.eligible[0]?.matches[0]?.detail).toContain("room rent");
+    const household = rankListings([room], "Santa Clara", 1000, ["price"], "roommates");
+    expect(household.eligible).toEqual([]);
+    expect(household.excludedInapplicableRent).toBe(1);
   });
 });
 

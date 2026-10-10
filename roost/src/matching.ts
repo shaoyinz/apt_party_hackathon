@@ -5,8 +5,12 @@ import {
   PRICE_CEILING,
   PRICE_SPAN,
   SPACE_SQFT_SCALE,
+  applicableMonthlyRent,
   formatMoney,
+  listingOrigin,
+  listingRentBasis,
   normalizeArea,
+  type HuntingMode,
   type Listing,
   type PriorityId,
 } from "./model";
@@ -28,6 +32,7 @@ export interface SearchOutcome {
   areaKnown: boolean;
   eligible: RankedListing[];
   excludedUnknownRent: number;
+  excludedInapplicableRent: number;
 }
 
 function clamp01(value: number): number {
@@ -40,20 +45,27 @@ export function listingMatchesArea(listing: Listing, area: string): boolean {
   return normalizeArea(listing.city) === query || normalizeArea(listing.neighborhood) === query;
 }
 
-export function withinBudget(listing: Listing, budget: number | null): boolean {
+export function withinBudget(
+  listing: Listing,
+  budget: number | null,
+  mode: HuntingMode = "solo",
+): boolean {
   if (budget == null) return true;
-  if (listing.rent == null) return false;
-  return listing.rent <= budget;
+  const amount = applicableMonthlyRent(listing, mode);
+  if (amount == null) return false;
+  return amount <= budget;
 }
 
-function featureScore(listing: Listing, priority: PriorityId): number {
+function featureScore(listing: Listing, priority: PriorityId, mode: HuntingMode): number {
   switch (priority) {
     case "commute":
       if (listing.commuteMinutes == null) return 0;
       return clamp01((COMMUTE_SCALE_MINUTES - listing.commuteMinutes) / COMMUTE_SCALE_MINUTES);
-    case "price":
-      if (listing.rent == null) return 0;
-      return clamp01((PRICE_CEILING - listing.rent) / PRICE_SPAN);
+    case "price": {
+      const amount = applicableMonthlyRent(listing, mode);
+      if (amount == null) return 0;
+      return clamp01((PRICE_CEILING - amount) / PRICE_SPAN);
+    }
     case "space":
       if (listing.sqft != null) return clamp01(listing.sqft / SPACE_SQFT_SCALE);
       if (listing.beds != null) return clamp01(listing.beds / 4);
@@ -70,9 +82,15 @@ function featureScore(listing: Listing, priority: PriorityId): number {
   }
 }
 
-function explain(listing: Listing, priority: PriorityId): ExplanationItem {
+function explain(listing: Listing, priority: PriorityId, mode: HuntingMode): ExplanationItem {
   switch (priority) {
     case "commute":
+      if (listingOrigin(listing) === "imported") {
+        return {
+          id: priority,
+          detail: "No commute estimate is attached to imported posts.",
+        };
+      }
       if (listing.commuteMinutes == null) {
         return {
           id: priority,
@@ -84,10 +102,7 @@ function explain(listing: Listing, priority: PriorityId): ExplanationItem {
         detail: `Sample estimate ${listing.commuteMinutes} min to ${DEMO_COMMUTE_DESTINATION}. Not a calculated route.`,
       };
     case "price":
-      if (listing.rent == null) {
-        return { id: priority, detail: "Total monthly rent is unknown and earns no price match." };
-      }
-      return { id: priority, detail: `${formatMoney(listing.rent)} total monthly rent.` };
+      return { id: priority, detail: priceDetail(listing, mode) };
     case "space":
       if (listing.sqft == null && listing.beds == null) {
         return { id: priority, detail: "Size is unknown and earns no space match." };
@@ -126,12 +141,29 @@ function explain(listing: Listing, priority: PriorityId): ExplanationItem {
   }
 }
 
-function isUnknown(listing: Listing, priority: PriorityId): boolean {
+function priceDetail(listing: Listing, mode: HuntingMode): string {
+  const basis = listingRentBasis(listing);
+  if (listing.rent == null || basis === "unknown") {
+    return "Monthly rent is unknown or ambiguous and earns no price match.";
+  }
+  if (basis === "nonmonthly") {
+    return `${formatMoney(listing.rent)} is not monthly, so it earns no price match and cannot pass a monthly budget.`;
+  }
+  if (basis === "monthly-room" && mode !== "solo") {
+    return `${formatMoney(listing.rent)} is monthly room rent, not household total rent, so it earns no price match.`;
+  }
+  if (basis === "monthly-room") {
+    return `${formatMoney(listing.rent)} monthly room rent. This is not whole-unit rent.`;
+  }
+  return `${formatMoney(listing.rent)} total monthly rent.`;
+}
+
+function isUnknown(listing: Listing, priority: PriorityId, mode: HuntingMode): boolean {
   switch (priority) {
     case "commute":
       return listing.commuteMinutes == null;
     case "price":
-      return listing.rent == null;
+      return applicableMonthlyRent(listing, mode) == null;
     case "space":
       return listing.sqft == null && listing.beds == null;
     case "furnished":
@@ -145,12 +177,14 @@ function isUnknown(listing: Listing, priority: PriorityId): boolean {
   }
 }
 
-function isFavorable(listing: Listing, priority: PriorityId): boolean {
+function isFavorable(listing: Listing, priority: PriorityId, mode: HuntingMode): boolean {
   switch (priority) {
     case "commute":
       return listing.commuteMinutes != null && listing.commuteMinutes <= 30;
-    case "price":
-      return listing.rent != null && listing.rent <= 3200;
+    case "price": {
+      const amount = applicableMonthlyRent(listing, mode);
+      return amount != null && amount <= 3200;
+    }
     case "space":
       if (listing.sqft != null) return listing.sqft >= 800;
       return listing.beds != null && listing.beds >= 2;
@@ -170,28 +204,31 @@ export function rankListings(
   area: string,
   budget: number | null,
   priorities: PriorityId[],
+  mode: HuntingMode = "solo",
 ): SearchOutcome {
   const inArea = listings.filter((listing) => listingMatchesArea(listing, area));
-  const excludedUnknownRent = inArea.filter((listing) => budget != null && listing.rent == null).length;
-  const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget));
+  const notComparable = inArea.filter((listing) => budget != null && applicableMonthlyRent(listing, mode) == null);
+  const excludedUnknownRent = notComparable.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
+  const excludedInapplicableRent = notComparable.length - excludedUnknownRent;
+  const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget, mode));
   const weights = priorities.map((_, index) => priorities.length - index);
   const eligible = eligibleListings
     .map((listing) => {
       const score = priorities.reduce(
-        (total, priority, index) => total + weights[index] * featureScore(listing, priority),
+        (total, priority, index) => total + weights[index] * featureScore(listing, priority, mode),
         0,
       );
       const matches: ExplanationItem[] = [];
       const tradeoffs: ExplanationItem[] = [];
       const unknowns: ExplanationItem[] = [];
       for (const priority of priorities) {
-        const item = explain(listing, priority);
-        if (isUnknown(listing, priority)) unknowns.push(item);
-        else if (isFavorable(listing, priority)) matches.push(item);
+        const item = explain(listing, priority, mode);
+        if (isUnknown(listing, priority, mode)) unknowns.push(item);
+        else if (isFavorable(listing, priority, mode)) matches.push(item);
         else tradeoffs.push(item);
       }
       return { listing, score, matches, tradeoffs, unknowns };
     })
     .sort((a, b) => b.score - a.score || a.listing.id.localeCompare(b.listing.id));
-  return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent };
+  return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent };
 }
