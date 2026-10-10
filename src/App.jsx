@@ -1,9 +1,10 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
 import { fetchDemoListings } from "./lib/listings";
 import { buildExport } from "./feedback";
 import { rankListings } from "./matching";
-import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
+import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
 const store = probeBrowserStore();
 export function App() {
@@ -12,37 +13,79 @@ export function App() {
     const [warning, setWarning] = useState(initial.warning);
     const [errors, setErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
-    const [listings, setListings] = useState(FALLBACK_LISTINGS);
+    const [catalog, setCatalog] = useState(null);
+    const [catalogError, setCatalogError] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
     const [dataStatus, setDataStatus] = useState("loading");
-    useEffect(() => {
-        let active = true;
-        fetchDemoListings()
-          .then((rows) => {
-              if (!active) return;
-              if (rows.length === 0) {
-                  setDataStatus("fallback");
-                  return;
-              }
-              setListings(rows);
-              setDataStatus("database");
-          })
-          .catch((error) => {
-              console.error("Supabase listings unavailable:", error);
-              if (active) setDataStatus("fallback");
-          });
-        return () => { active = false; };
-    }, []);
+    
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
             setWarning(next);
     }, [state]);
+    useEffect(() => {
+        let cancelled = false;
+        void loadCatalog().then((next) => {
+            if (!cancelled)
+                setCatalog(next);
+        }).catch(() => {
+            if (!cancelled)
+                setCatalogError("The listing import service did not respond. Sample fixtures are not live results.");
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+   useEffect(() => {
+    let active = true;
+
+    fetchDemoListings()
+        .then((rows) => {
+            if (!active) return;
+
+            if (rows.length > 0) {
+                setDemoListings(rows);
+                setDataStatus("database");
+            } else {
+                setDataStatus("fallback");
+            }
+        })
+        .catch((error) => {
+            console.error("Supabase listings unavailable:", error);
+
+            if (active) {
+                setDataStatus("fallback");
+            }
+        });
+
+    return () => {
+        active = false;
+    };
+   }, []);
+ 
     const parsedBudget = parseBudget(state.budgetText);
+
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
-    const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities), [listings, state.area, budget, state.priorities]);
+
+    const imported = catalog?.listings ?? [];
+
+    const listings = useMemo(
+      () => [...demoListings, ...imported],
+      [demoListings, imported]
+    );
+
+    const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, state.mode), [listings, state.area, budget, state.priorities, state.mode]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
     const titles = useMemo(() => new Map(listings.map((listing) => [listing.id, listing.title])), [listings]);
-    const exported = useMemo(() => buildExport(state, titles, matchingIds), [state, titles, matchingIds]);
+    const exported = useMemo(() => buildExport(state, titles, matchingIds, {
+        listings,
+        liveImport: {
+            status: catalogError ? "unavailable" : catalog ? catalogStatus(catalog) : "loading",
+            importedAt: catalog?.importedAt ?? null,
+            errorCode: catalog?.errorCode ?? (catalogError ? "unavailable" : null),
+        },
+    }), [state, titles, matchingIds, listings, catalog, catalogError]);
     const outside = state.useful.filter((item) => !matchingIds.has(item.id));
     function update(patch) {
         setState((current) => ({ ...current, ...patch }));
@@ -78,6 +121,19 @@ export function App() {
             useful: state.useful.map((item) => (item.id === id ? { ...item, note } : item)),
         });
     }
+    async function refreshImport() {
+        setRefreshing(true);
+        setCatalogError(null);
+        try {
+            setCatalog(await loadCatalog(true));
+        }
+        catch {
+            setCatalogError("Refresh failed before a catalog response. Saved listings were not replaced with sample data.");
+        }
+        finally {
+            setRefreshing(false);
+        }
+    }
     function reset() {
         if (!window.confirm("Reset this browser's saved search, useful listings, and feedback?"))
             return;
@@ -89,29 +145,30 @@ export function App() {
     }
     return (<div className="page">
       <header className="mast">
-        <p className="stamp">Sample data</p>
+        <p className="stamp">{catalog && imported.length > 0 ? "Imported + sample" : "Sample data"}</p>
         <div>
           <p className="eyebrow">South Bay scratch prototype</p>
           <h1>Roost</h1>
         </div>
       </header>
       <p className="local-note" role="status">
-        {dataStatus === "database"
-          ? "Displaying synthetic sample listings loaded from Supabase."
+         {dataStatus === "database"
+         ? "Displaying synthetic sample listings loaded from Supabase."
           : dataStatus === "loading"
-            ? "Loading demo listings from Supabase; showing local fixtures meanwhile."
-            : "Supabase demo listings unavailable or empty; showing local sample fixtures."}
+            ? "Loading Supabase demo listings."
+            : "Supabase unavailable; using local sample fixtures."}
       </p>
       <p className="banner" role="note">
-        These listings are synthetic examples, not live availability. Roost is not checking current listings,
-        calculating your route, verifying reviews, or making an AI recommendation. Nothing is sent
-        to the team unless you share an export yourself.
+        {importBanner(catalog, catalogError, refreshing)} Roost does not calculate your route, verify
+        reviews, or make an AI recommendation. Nothing is sent to the team unless you share an export
+        yourself.
       </p>
+      <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>
       {warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
         </p>) : (<p className="local-note">Search, shortlist, and feedback stay in this browser only.</p>)}
 
-      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
     </div>);
@@ -215,11 +272,13 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAd
       </button>
     </form>);
 }
-function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budget, outside, titles, onEdit, onToggle, onNote, onReset, }) {
+function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, budget, outside, titles, listings, catalog, catalogError, onEdit, onToggle, onNote, onReset, }) {
     const parsed = parseBudget(state.budgetText);
+    const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
+    const liveFailed = Boolean(catalogError || catalog?.errorCode);
     return (<section className="panel" aria-labelledby="results-heading">
       <div className="results-head">
-        <h2 id="results-heading">Sample matches</h2>
+        <h2 id="results-heading">Matches</h2>
         <div className="row-actions">
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
@@ -249,35 +308,49 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
       </dl>
       <p className="help">
         Bedroom count is a size fact only. It does not mean a listing fits your household. The first
-        priority has the strongest effect on order. Sample commute estimates use {DEMO_COMMUTE_DESTINATION}.
+        priority has the strongest effect on order. Sample commute estimates use {DEMO_COMMUTE_DESTINATION} and are not applied to imported posts.
       </p>
+      {liveFailed ? <p className="warning" role="status">Live import did not succeed. Matching sample cards below are fixtures, not a substitute feed.</p> : null}
       {state.priorities.length === 0 ? (<div className="empty" role="status">
           <p>Choose at least one priority before Roost ranks sample listings.</p>
           <button type="button" className="primary" onClick={onEdit}>
             Back to priorities
           </button>
         </div>) : !areaKnown ? (<div className="empty" role="status">
-          <p>No sample listings for “{state.area.trim()}”. Roost will not substitute a different area.</p>
+          <p>No listings for “{state.area.trim()}”. Roost will not substitute a different area or the search source name.</p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit area
           </button>
         </div>) : outcomeEligible.length === 0 ? (<div className="empty" role="status">
           <p>
-            No sample listings in this area
-            {budget != null ? ` are at or under ${formatMoney(budget)} total monthly rent` : ""}. Unknown
-            rent is not treated as affordable.
+            No listings in this area
+            {budget != null ? ` are at or under ${formatMoney(budget)} applicable monthly rent` : ""}. Unknown,
+            ambiguous, weekly, and roommate-household room rents are not treated as a passing total.
           </p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
           </button>
         </div>) : (<ol className="cards">
-          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} useful={state.useful.find((entry) => entry.id === item.listing.id)} onToggle={onToggle} onNote={onNote}/>))}
+          {outcomeEligible.map((item, index) => (<ListingCard key={item.listing.id} item={item} rank={index + 1} useful={state.useful.find((entry) => entry.id === item.listing.id)} mode={state.mode} onToggle={onToggle} onNote={onNote}/>))}
         </ol>)}
       {excludedUnknownRent > 0 ? (<p className="help">
-          {excludedUnknownRent} sample listing{excludedUnknownRent === 1 ? "" : "s"} in this area
-          {excludedUnknownRent === 1 ? " has" : " have"} unknown rent and {excludedUnknownRent === 1 ? "was" : "were"} left
+          {excludedUnknownRent} listing{excludedUnknownRent === 1 ? "" : "s"} in this area
+          {excludedUnknownRent === 1 ? " has" : " have"} unknown or ambiguous rent and {excludedUnknownRent === 1 ? "was" : "were"} left
           out of the budget filter.
         </p>) : null}
+      {excludedInapplicableRent > 0 ? (<p className="help">
+          {excludedInapplicableRent} listing{excludedInapplicableRent === 1 ? "" : "s"} in this area cannot pass the total budget because the rate is not a comparable monthly total.
+        </p>) : null}
+      {unlocated.length > 0 ? (<section className="outside" aria-labelledby="unlocated-heading">
+          <h3 id="unlocated-heading">Imported offers with no explicit city</h3>
+          <p className="help">These posts were not assigned a city from the search source.</p>
+          <ul>
+            {unlocated.map((listing) => (<li key={listing.id}>
+                <p><strong>{listing.title}</strong> <span className="status">Unverified imported offer</span></p>
+                {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
+              </li>))}
+          </ul>
+        </section>) : null}
       {outside.length > 0 ? (<section className="outside" aria-labelledby="outside-heading">
           <h3 id="outside-heading">Useful listings outside this search</h3>
           <ul>
@@ -296,21 +369,24 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
         </section>) : null}
     </section>);
 }
-function ListingCard({ item, rank, useful, onToggle, onNote, }) {
+function ListingCard({ item, rank, useful, mode, onToggle, onNote, }) {
     const listing = item.listing;
+    const importedCard = listingOrigin(listing) === "imported";
     return (<li className="card">
       <div className="card-top">
-        <p className="rank-badge">#{rank} sample</p>
-        <p className="status">{useful ? "Matches current search" : "Sample fixture"}</p>
+        <p className="rank-badge">#{rank} {importedCard ? "imported" : "sample"}</p>
+        <p className="status">{importedCard ? "Unverified imported offer" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
       <h3>{listing.title}</h3>
       <p className="where">
-        {listing.neighborhood}, {listing.city}
+        {[listing.neighborhood, listing.city].filter(Boolean).join(", ") || "City not stated in the post"}
       </p>
+      {importedCard ? <p className="help">{offerKindLabel(listing.offerKind)} from {listing.sourceGroup || "a configured listing source"}. Not verified current availability.{listing.postedAt ? ` Posted ${listing.postedAt}.` : " Post time unknown."}{listing.importedAt ? ` Imported ${formatTimestamp(listing.importedAt)}.` : ""}</p> : null}
+      {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View listing</a></p> : null}
       <dl className="facts">
         <div>
-          <dt>Total monthly rent</dt>
-          <dd>{listing.rent == null ? "Unknown" : formatMoney(listing.rent)}</dd>
+          <dt>Rent</dt>
+          <dd>{rentFact(listing, mode)}</dd>
         </div>
         <div>
           <dt>Beds / room type</dt>
@@ -382,7 +458,7 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
         <div>
           <dt>Schema</dt>
           <dd>
-            v{exported.schemaVersion}, sample data
+            v{exported.schemaVersion}, {exported.includesImportedData ? "sample and imported data" : "sample data"}
           </dd>
         </div>
         <div>
@@ -432,6 +508,57 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
           </button>) : null}
       </div>
     </section>);
+}
+function ImportPanel({ catalog, catalogError, refreshing, onRefresh }) {
+    return (<section className="panel" aria-labelledby="import-heading">
+      <h2 id="import-heading">Craigslist import</h2>
+      <p className="help">The server reads configured Craigslist search URLs. A failed refresh keeps the last successful import. Sample fixtures stay labeled and are not used to fill a failed import.</p>
+      {catalogError ? <p className="warning" role="alert">{catalogError}</p> : null}
+      {!catalog && !catalogError ? <p role="status">Loading import status.</p> : null}
+      {catalog?.error ? <p className="warning" role="status">{catalog.error}{catalog.stale && catalog.importedAt ? ` Last successful import ${formatTimestamp(catalog.importedAt)}.` : ""}</p> : null}
+      {catalog && !catalog.error && catalog.importedAt ? <p role="status">Last successful import {formatTimestamp(catalog.importedAt)}.</p> : null}
+      {catalog?.sources?.length ? <ul className="source-list">{catalog.sources.map((source) => <li key={source.id}><strong>{source.label}</strong> <span className="status">{source.status}, retrieved {source.retrieved}, accepted {source.accepted}. {source.message}</span></li>)}</ul> : <p className="help">Configured sources: {catalog?.configuredSources?.map((source) => source.label).join(", ") || "loading"}.</p>}
+      <button type="button" className="primary" onClick={onRefresh} disabled={refreshing || !catalog}>{refreshing ? "Refreshing import" : "Refresh Craigslist listings"}</button>
+    </section>);
+}
+function catalogStatus(catalog) {
+    if (catalog.errorCode)
+        return catalog.errorCode;
+    if (catalog.stale)
+        return "stale";
+    if (catalog.importedAt && catalog.listings.length === 0)
+        return "empty";
+    if (catalog.importedAt)
+        return "ok";
+    return "not_imported";
+}
+function importBanner(catalog, catalogError, refreshing) {
+    if (refreshing)
+        return "Refreshing configured Craigslist searches. This does not replace saved listings until the fetch finishes.";
+    if (catalogError)
+        return catalogError;
+    if (!catalog)
+        return "Checking the Craigslist import status. Sample fixtures are labeled and are not a live feed.";
+    if (catalog.error)
+        return catalog.error;
+    if (catalog.listings.length > 0)
+        return "Imported posts are unverified Craigslist offers. Sample fixtures remain labeled separately.";
+    return "No imported offers are cached yet. Sample fixtures are labeled and are not live availability.";
+}
+function formatTimestamp(value) {
+    const parsed = Date.parse(value);
+    if (Number.isNaN(parsed))
+        return value;
+    return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+async function loadCatalog(refresh = false) {
+    const response = await fetch(refresh ? "/api/listings/refresh" : "/api/listings", {
+        method: refresh ? "POST" : "GET",
+        headers: { accept: "application/json" },
+    });
+    if (!response.ok)
+        throw new Error("catalog request failed");
+    return response.json();
 }
 function downloadJson(json) {
     const blob = new Blob([json + "\n"], { type: "application/json" });

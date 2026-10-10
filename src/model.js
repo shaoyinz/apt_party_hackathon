@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const DEMO_COMMUTE_DESTINATION = "Mountain View Caltrain station";
 export const LEASE_FLEX_MAX_MONTHS = 6;
 export const COMMUTE_SCALE_MINUTES = 60;
@@ -109,4 +109,48 @@ export function leaseFact(months) {
     if (months <= LEASE_FLEX_MAX_MONTHS)
         return `${months} months (flexible: six months or less)`;
     return `${months} months (not flexible)`;
+}
+export function listingOrigin(listing) {
+    return listing.origin ?? "sample";
+}
+export function listingRentBasis(listing) {
+    return listing.rentBasis ?? (listingOrigin(listing) === "sample" ? "monthly-total" : "unknown");
+}
+export function applicableMonthlyRent(listing, mode) {
+    if (listing.rent == null)
+        return null;
+    const basis = listingRentBasis(listing);
+    if (basis === "monthly-total")
+        return listing.rent;
+    if (basis === "monthly-room" && mode === "solo")
+        return listing.rent;
+    return null;
+}
+export function offerKindLabel(kind) {
+    if (kind === "room")
+        return "Room";
+    if (kind === "sublet")
+        return "Sublet";
+    if (kind === "whole")
+        return "Whole unit";
+    return "Offer type unknown";
+}
+export function rentFact(listing, mode) {
+    const basis = listingRentBasis(listing);
+    if (basis === "unknown") {
+        if (listing.rent == null)
+            return "Unknown. Missing or ambiguous rent is not treated as affordable.";
+        return `${formatMoney(listing.rent)} has no explicit monthly whole-unit basis, so it cannot pass a monthly budget.`;
+    }
+    if (listing.rent == null)
+        return "Unknown. Missing or ambiguous rent is not treated as affordable.";
+    const amount = formatMoney(listing.rent);
+    if (basis === "nonmonthly")
+        return `${amount}, not a monthly rate. It cannot pass a monthly budget.`;
+    if (basis === "monthly-room") {
+        if (mode === "roommates")
+            return `${amount} monthly room rent. Not household total rent, so it cannot pass the total budget.`;
+        return `${amount} monthly room rent. Not whole-unit rent.`;
+    }
+    return `${amount} total monthly rent.`;
 }
