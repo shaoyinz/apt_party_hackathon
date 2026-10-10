@@ -192,8 +192,10 @@ export function rankListings(listings, area, budget, priorities, modeOrOptions =
     const mode = options.mode;
     const inArea = listings.filter((listing) => listingMatchesArea(listing, area));
     const notComparable = inArea.filter((listing) => budget != null && applicableMonthlyRent(listing, mode) == null);
-    const excludedUnknownRent = notComparable.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
-    const excludedInapplicableRent = notComparable.length - excludedUnknownRent;
+    const excludedForSale = notComparable.filter((listing) => listingRentBasis(listing) === "for-sale").length;
+    const comparableGaps = notComparable.filter((listing) => listingRentBasis(listing) !== "for-sale");
+    const excludedUnknownRent = comparableGaps.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
+    const excludedInapplicableRent = comparableGaps.length - excludedUnknownRent;
     const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget, mode));
     const weights = priorities.map((_, index) => priorities.length - index);
     const eligible = eligibleListings
@@ -214,5 +216,5 @@ export function rankListings(listings, area, budget, priorities, modeOrOptions =
         return { listing, score, matches, tradeoffs, unknowns };
     })
         .sort((a, b) => b.score - a.score || a.listing.id.localeCompare(b.listing.id));
-    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent };
+    return { areaKnown: inArea.length > 0, eligible, excludedUnknownRent, excludedInapplicableRent, excludedForSale };
 }
