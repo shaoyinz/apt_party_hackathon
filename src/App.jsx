@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
+import { ImportFlow } from "./ImportFlow";
+import { loadImports, openImportSession } from "./importApi";
+import { toSearchListing } from "./import/searchShape";
 import { rankListings } from "./matching";
 import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
@@ -11,16 +14,25 @@ export function App() {
     const [warning, setWarning] = useState(initial.warning);
     const [errors, setErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
+    const [imported, setImported] = useState([]);
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
             setWarning(next);
     }, [state]);
+    useEffect(() => {
+        openImportSession()
+            .then(() => loadImports())
+            .then((payload) => setImported(payload.listings || []))
+            .catch(() => setImported([]));
+    }, []);
     const parsedBudget = parseBudget(state.budgetText);
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
-    const outcome = useMemo(() => rankListings(LISTINGS, state.area, budget, state.priorities), [state.area, budget, state.priorities]);
+    const corpus = useMemo(() => [...LISTINGS, ...imported.map(toSearchListing)], [imported]);
+    const outcome = useMemo(() => rankListings(corpus, state.area, budget, state.priorities), [corpus, state.area, budget, state.priorities]);
     const matchingIds = useMemo(() => new Set(outcome.eligible.map((item) => item.listing.id)), [outcome]);
-    const titles = useMemo(() => new Map(LISTINGS.map((listing) => [listing.id, listing.title])), []);
+    const titles = useMemo(() => new Map(corpus.map((listing) => [listing.id, listing.title])), [corpus]);
     const exported = useMemo(() => buildExport(state, titles, matchingIds), [state, titles, matchingIds]);
     const outside = state.useful.filter((item) => !matchingIds.has(item.id));
     function update(patch) {
@@ -83,12 +95,15 @@ export function App() {
           {warning} Saved data stays in this browser only.
         </p>) : (<p className="local-note">Search, shortlist, and feedback stay in this browser only.</p>)}
 
-      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+      {importOpen ? (<ImportFlow onClose={() => setImportOpen(false)} onSaved={(listings) => {
+                setImported(listings);
+                setImportOpen(false);
+            }}/>) : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
 
       <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
     </div>);
 }
-function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAdd, onRemove, onMove, onSubmit, }) {
+function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAdd, onRemove, onMove, onSubmit, onImport, }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));
     return (<form className="panel" onSubmit={onSubmit} noValidate>
       <h2>Describe your search</h2>
@@ -182,12 +197,15 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAd
           </p>) : null}
       </fieldset>
 
-      <button className="primary" type="submit">
-        View matches
-      </button>
+      <div className="row-actions">
+        <button className="primary" type="submit">
+          View matches
+        </button>
+        <button type="button" onClick={onImport}>Bring your own listing</button>
+      </div>
     </form>);
 }
-function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budget, outside, titles, onEdit, onToggle, onNote, onReset, }) {
+function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budget, outside, titles, onEdit, onToggle, onNote, onReset, onImport, }) {
     const parsed = parseBudget(state.budgetText);
     return (<section className="panel" aria-labelledby="results-heading">
       <div className="results-head">
@@ -196,6 +214,7 @@ function Results({ state, outcomeEligible, areaKnown, excludedUnknownRent, budge
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
           </button>
+<button type="button" onClick={onImport}>Bring your own listing</button>
           <button type="button" onClick={onReset}>
             Reset
           </button>
@@ -272,17 +291,19 @@ function ListingCard({ item, rank, useful, onToggle, onNote, }) {
     const listing = item.listing;
     return (<li className="card">
       <div className="card-top">
-        <p className="rank-badge">#{rank} sample</p>
-        <p className="status">{useful ? "Matches current search" : "Sample fixture"}</p>
+        <p className="rank-badge">#{rank} {listing.sampleData === false ? "saved" : "sample"}</p>
+        <p className="status">{listing.sampleData === false ? "User-provided, unverified" : useful ? "Matches current search" : "Sample fixture"}</p>
       </div>
       <h3>{listing.title}</h3>
+      {listing.sampleData === false ? <p className="stamp">{listing.origin === "link" ? "From a link" : "From screenshots"}</p> : null}
       <p className="where">
-        {listing.neighborhood}, {listing.city}
+        {listing.neighborhood}{listing.neighborhood && listing.city ? ", " : ""}{listing.city}
       </p>
+      {listing.sourceUrl ? <p className="help">Source: {listing.sourceUrl}</p> : null}
       <dl className="facts">
         <div>
           <dt>Total monthly rent</dt>
-          <dd>{listing.rent == null ? "Unknown" : formatMoney(listing.rent)}</dd>
+          <dd>{listing.rent == null ? listing.roomRent == null ? "Unknown" : `${formatMoney(listing.roomRent)} room rent, not whole-unit rent` : formatMoney(listing.rent)}</dd>
         </div>
         <div>
           <dt>Beds / room type</dt>

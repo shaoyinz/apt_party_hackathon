@@ -1,6 +1,6 @@
 # Roost interactive prototype
 
-Scratch version of Roost for solo renters and roommate households. It runs in the browser with sample listings only. No API keys, accounts, or network services are required.
+Scratch version of Roost for solo renters and roommate households. Sample listings run in the browser. Bring your own listing can extract a public link or store screenshots, then save to PostgreSQL when database credentials are configured.
 
 ## Status
 
@@ -72,7 +72,9 @@ Download JSON (`roost-search-feedback.json`) is created only when you click Down
 
 ## Deferred integrations
 
-Listing ingestion, scraping, screenshots, Telegram, geocoding, maps, real commute calculations, invitations, voting, realtime collaboration, external reviews, shared databases, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+Telegram, geocoding, maps, real commute calculations, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope.
+
+Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). The dev server exposes `/api` on the same local process. Sample fixtures stay labeled as sample data.
 
 ## Checks
 

@@ -1,6 +1,6 @@
 # Local preview
 
-Verified for the Roost prototype in this project directory. No databases, queues, or API credentials are required.
+Verified for the Roost prototype in this project directory. Sample search needs no database. Bring your own listing uses the Vite dev server's `/api` middleware in the same process. Database and OCR credentials are optional; without them the import form still opens and save reports the missing dependency.
 
 ## Dependency setup
 
@@ -12,7 +12,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None. Listings are local fixtures.
+None required for sample search. Optional PostgreSQL when `DATABASE_URL` or `PGHOST` is set. Optional `tesseract` for screenshot OCR. Variable names are in `.env.example`.
 
 ## Environment prerequisites
 

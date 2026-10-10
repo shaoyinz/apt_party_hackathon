@@ -1,9 +1,10 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { roostApiPlugin } from "./server/attach.js";
 const cacheRoot = process.env.XDG_CACHE_HOME;
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), roostApiPlugin()],
     server: {
         host: "127.0.0.1",
         allowedHosts: true,

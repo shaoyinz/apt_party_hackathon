@@ -58,6 +58,9 @@ function explain(listing, priority) {
             };
         case "price":
             if (listing.rent == null) {
+                if (listing.roomRent != null) {
+                    return { id: priority, detail: `${formatMoney(listing.roomRent)} is room rent, not whole-unit rent, so it earns no total-price match.` };
+                }
                 return { id: priority, detail: "Total monthly rent is unknown and earns no price match." };
             }
             return { id: priority, detail: `${formatMoney(listing.rent)} total monthly rent.` };
