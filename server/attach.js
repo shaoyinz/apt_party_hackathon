@@ -16,7 +16,7 @@ export async function createDevHandler() {
     return createHandler({
         repository,
         testResolver: process.env.ENABLE_TEST_RESOLVER === "true",
-        dataRoot: path.join(root, "data"),
+        dataRoot: process.env.ROOST_DATA_DIR || path.join(root, "data"),
         ocrStatus,
     });
 }

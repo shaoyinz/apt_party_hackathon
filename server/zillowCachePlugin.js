@@ -72,6 +72,7 @@ export function zillowCachePlugin() {
     });
     return {
         name: "zillow-sale-cache",
+        middleware,
         configureServer(server) {
             server.middlewares.use(middleware);
         },

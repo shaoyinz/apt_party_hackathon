@@ -2,6 +2,7 @@ import { amenityOrigins, geocodeQuery, routeOrigins, suggestQuery } from "./hand
 export function locationPlugin() {
     return {
         name: "roost-location",
+        handle,
         configureServer(server) {
             server.middlewares.use(handle);
         },

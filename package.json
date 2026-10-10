@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
 "smoke:location": "node scripts/smoke-location.mjs",
+    "start": "node server/production.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "py:sync": "uv sync --frozen"
   },
