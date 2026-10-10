@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { createZillowReadMiddleware } from "./zillowCachePlugin.js";
-import { askingPriceUsd, createMemorySaleStore, cronExpression, DEFAULT_SEARCH_URL, readSaleCache, runRefresh, scheduleIsActive } from "./zillowCache.js";
+import { createZillowReadMiddleware, readCachedSources } from "./zillowCachePlugin.js";
+import { askingPriceUsd, createMemorySaleStore, cronExpression, DEFAULT_SEARCH_URL, nextDailyRun, readSaleCache, runRefresh, scheduleIsActive, scheduleShouldStart, startDailyRefresh, stopDailyRefresh } from "./zillowCache.js";
 import { failureFromStderr } from "../scripts/zillow-refresh.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -127,6 +127,20 @@ describe("zillow sale cache", () => {
         expect(stale.state).toBe("stale");
         expect(fetchSnapshot).not.toHaveBeenCalled();
         expect(cronExpression({})).toBe("0 3 * * *");
+        expect(scheduleShouldStart({})).toBe(false);
+        expect(scheduleShouldStart({ RAILWAY_ENVIRONMENT: "production" })).toBe(true);
+        expect(scheduleShouldStart({ RAILWAY_ENVIRONMENT: "production", ZILLOW_REFRESH_SCHEDULE: "0" })).toBe(false);
+        expect(nextDailyRun(new Date("2026-10-10T03:00:00Z")).toISOString()).toBe("2026-10-11T03:00:00.000Z");
+        expect(scheduleIsActive()).toBe(false);
+        const run = vi.fn(async () => {});
+        startDailyRefresh(run, {
+            env: { ZILLOW_REFRESH_SCHEDULE: "1" },
+            now: () => new Date("2026-10-10T02:00:00Z"),
+            setTimer: () => 0,
+        });
+        expect(run).not.toHaveBeenCalled();
+        expect(scheduleIsActive()).toBe(true);
+        stopDailyRefresh();
         expect(scheduleIsActive()).toBe(false);
         expect(failureFromStderr("zillow_scraper: http_error: Direct fetch was denied (HTTP 403).\n").http_status).toBe(403);
     });
@@ -147,5 +161,36 @@ describe("zillow sale cache", () => {
         expect(down.statusCode).toBe(503);
         expect(JSON.parse(down.end.mock.calls[0][0]).state).toBe("database_unavailable");
         expect(JSON.parse(down.end.mock.calls[0][0]).listings).toEqual([]);
+    });
+
+    it("filters cached rows by city without scraping", async () => {
+        const queens = "https://www.zillow.com/homes/for_sale/Queens,-NY_rb/";
+        const store = createMemorySaleStore();
+        store.configured = true;
+        await refresh(store, success([card("1", "$700,000", "10 Brooklyn Ave")]));
+        await runRefresh(store, {
+            searchUrl: queens,
+            fetchSnapshot: async () => success([card("9", "$800,000", "9 Queens Blvd")]),
+        });
+        const fetchSnapshot = vi.fn();
+        const brooklyn = await readCachedSources(store, [{ label: "Brooklyn, NY", url }], new Date("2026-10-10T04:00:00Z"));
+        expect(brooklyn.listings.map((item) => item.city)).toEqual(["Brooklyn, NY"]);
+        expect(brooklyn.listings[0].asking_price_usd).toBe(700000);
+        expect(brooklyn.monthly_rent).toBeNull();
+        const queensBody = await readCachedSources(store, [{ label: "Queens, NY", url: queens }], new Date("2026-10-10T04:00:00Z"));
+        expect(queensBody.listings.map((item) => item.source_identity)).toEqual(["zpid:9"]);
+        expect(fetchSnapshot).not.toHaveBeenCalled();
+
+        const res = { setHeader() {}, end: vi.fn() };
+        await createZillowReadMiddleware(async () => store)({ method: "GET", url: "/api/zillow-sales?city=Brooklyn" }, res, () => {});
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body.listings).toHaveLength(1);
+        expect(body.listings[0].search_url).toBe(url);
+        expect(body.live).toBe(false);
+
+        const missing = { setHeader() {}, end: vi.fn() };
+        await createZillowReadMiddleware(async () => store)({ method: "GET", url: "/api/zillow-sales?city=Austin" }, missing, () => {});
+        expect(JSON.parse(missing.end.mock.calls[0][0]).state).toBe("unknown_coverage");
+        expect(JSON.parse(missing.end.mock.calls[0][0]).listings).toEqual([]);
     });
 });

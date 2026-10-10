@@ -7,12 +7,73 @@ const STALE_MS = 24 * 60 * 60 * 1000;
 const LOCK_KEY = "zillow-sale-refresh";
 const PRICE = /^\$(\d{1,3}(?:,\d{3})+|\d+)$/;
 
+let activeSchedule = null;
+
 export function cronExpression(env = process.env) {
     return env.ZILLOW_REFRESH_CRON || DEFAULT_CRON;
 }
 
+export function scheduleShouldStart(env = process.env) {
+    if (env.ZILLOW_REFRESH_SCHEDULE === "0")
+        return false;
+    if (env.ZILLOW_REFRESH_SCHEDULE === "1")
+        return true;
+    return Boolean(env.RAILWAY_ENVIRONMENT || env.RAILWAY_ENVIRONMENT_NAME);
+}
+
 export function scheduleIsActive() {
-    return false;
+    return Boolean(activeSchedule);
+}
+
+export function nextDailyRun(now = new Date(), expression = DEFAULT_CRON) {
+    const [minuteText, hourText] = String(expression).trim().split(/\s+/);
+    const minute = Number(minuteText);
+    const hour = Number(hourText);
+    if (!Number.isInteger(minute) || !Number.isInteger(hour) || minute < 0 || minute > 59 || hour < 0 || hour > 23)
+        throw new Error("unsupported cron");
+    const next = new Date(now.getTime());
+    next.setUTCSeconds(0, 0);
+    next.setUTCHours(hour, minute, 0, 0);
+    if (next.getTime() <= now.getTime())
+        next.setUTCDate(next.getUTCDate() + 1);
+    return next;
+}
+
+export function startDailyRefresh(run, options = {}) {
+    if (activeSchedule)
+        return activeSchedule;
+    const env = options.env || process.env;
+    if (!scheduleShouldStart(env))
+        return { active: false, cron: cronExpression(env) };
+    const cron = cronExpression(env);
+    const setTimer = options.setTimer || ((fn, ms) => {
+        const timer = setTimeout(fn, ms);
+        timer.unref?.();
+        return timer;
+    });
+    const now = options.now || (() => new Date());
+    const state = { active: true, cron, timer: null };
+    const arm = () => {
+        const delay = Math.max(0, nextDailyRun(now(), cron).getTime() - now().getTime());
+        state.timer = setTimer(async () => {
+            try {
+                await run();
+            }
+            catch {
+                // The refresh command records its own failure and must not clear the cache.
+            }
+            arm();
+        }, delay);
+    };
+    arm();
+    activeSchedule = state;
+    return state;
+}
+
+export function stopDailyRefresh() {
+    if (activeSchedule?.timer)
+        clearTimeout(activeSchedule.timer);
+    activeSchedule = null;
 }
 
 export function askingPriceUsd(pricing, priceType) {

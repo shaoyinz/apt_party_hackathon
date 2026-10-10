@@ -1,5 +1,5 @@
-# Example only. This file is not installed.
-# Intended host is the Railway deployment, daily at 03:00 UTC.
-# Start command: node scripts/zillow-refresh.mjs
-# This session has no Railway token, so the schedule is not active.
-0 3 * * * cd /opt/roost && /usr/bin/node scripts/zillow-refresh.mjs
+# Not installed. Do not add a second Railway service for this file.
+# The roost process starts the daily timer when RAILWAY_ENVIRONMENT is set.
+# Command that timer runs: node scripts/zillow-refresh.mjs
+# Default time is 03:00 UTC (ZILLOW_REFRESH_CRON=0 3 * * *).
+

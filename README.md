@@ -119,31 +119,33 @@ On 2026-10-10T21:16:35Z a bounded direct fetch of `https://www.zillow.com/homes/
 
 ### Daily sale cache
 
-This does not change rental search and does not write asking prices into `price_monthly`. The for-sale section on the page reads `GET /api/zillow-sales` once. Filtering that section does not scrape.
+This does not change rental search and does not write asking prices into `price_monthly`. The for-sale section reads `GET /api/zillow-sales`. Changing the city filter reads the cache again and does not scrape.
 
-Apply the migration in the Supabase SQL editor, or with `psql` using a server-side `DATABASE_URL` that is not committed:
+The only Zillow migration is `supabase/002_zillow_sale_cache.sql`. Do not apply `supabase/002_redfin_listings.sql` for this cache, and do not change the Redfin or Craigslist paths. Apply the Zillow file in the Supabase SQL editor, or with `psql` using a server-side `DATABASE_URL` that is not committed:
 
 ```bash
 psql "$DATABASE_URL" -f supabase/002_zillow_sale_cache.sql
 psql "$DATABASE_URL" -c "SELECT tablename FROM pg_tables WHERE tablename LIKE 'zillow_%' ORDER BY tablename;"
 ```
 
-The file uses `IF NOT EXISTS`, so applying it again is safe. It does not alter `public.listings`. Put `DATABASE_URL` only in server or job secret storage. Do not prefix it with `VITE_`. Connections with `sslmode=require`, `verify-ca`, or `verify-full` verify certificates.
+The file uses `IF NOT EXISTS`, so applying it again is safe. It creates `zillow_sale_snapshots`, `zillow_sale_rows`, and `zillow_refresh_runs`. It does not alter `public.listings` or `price_monthly`.
 
-Configured coverage defaults to Brooklyn, NY in `zillow-sources.json`. Override with `ZILLOW_SEARCH_SOURCES` using `Label => URL` pairs separated by `|` or newlines. Do not comma-split those URLs.
+Put `DATABASE_URL` only in Railway service variables for `roost`, or another server/job secret store. Use the Supabase URI from Project Settings → Database, with `sslmode=require` so the server verifies the certificate. Do not prefix it with `VITE_`, and do not put it in frontend code, screenshots, or git. This session cannot read that value unless it is attached as a Party secret.
 
-`GET /api/zillow-sales` reads that cache only. It never starts the scraper. A missing database returns `database_unavailable`. No successful snapshot returns `unavailable` with the latest failure. An explicit empty page returns `empty`. Rows older than 24 hours are `stale` and are still returned. Cached responses set `live` to false.
+Configured coverage defaults to Brooklyn, NY in `zillow-sources.json`. Override with `ZILLOW_SEARCH_SOURCES` using `Label => URL` pairs separated by `|` or newlines. Do not comma-split those URLs. `GET /api/zillow-sales?city=Brooklyn` reads only that configured cache. An unconfigured city returns `unknown_coverage` and does not scrape.
 
-The one-shot job is `node scripts/zillow-refresh.mjs`. It uses the scraper, defaults to 03:00 UTC via `ZILLOW_REFRESH_CRON` (`0 3 * * *`), and does not retry. Overlapping runs record `overlap` and keep the last snapshot. HTTP 403, challenges, truncated pages, and database errors do not clear a prior snapshot. An explicit empty page does.
+`GET /api/zillow-sales` never starts the scraper. A missing database returns `database_unavailable`. No successful snapshot returns `unavailable` with the latest failure. An explicit empty page returns `empty`. Rows older than 24 hours are `stale` and are still returned. Cached responses set `live` to false.
 
-`deploy/zillow-refresh.cron` is an example. It is not installed here. This repository has no GitHub Actions schedule, `crontab` is not available in this environment, and a local test run is not a production schedule. A daily job also does not unblock the HTTP 403 live fetch.
+The one-shot job is `node scripts/zillow-refresh.mjs`. It does not retry. Overlapping runs record `overlap` and keep the last snapshot. HTTP 403, challenges, truncated pages, and database errors do not clear a prior snapshot. An explicit empty page does.
+
+When the roost process has `RAILWAY_ENVIRONMENT` set, it starts a daily timer at 03:00 UTC (`ZILLOW_REFRESH_CRON`, default `0 3 * * *`) and runs that job. Set `ZILLOW_REFRESH_SCHEDULE=0` to disable it, or `ZILLOW_REFRESH_SCHEDULE=1` to start it outside Railway. This is the same roost service, not a second Railway service. `deploy/zillow-refresh.cron` is not installed. A timer in code is not proof that a deployed process has fired it.
 
 Verification on 2026-10-10, kept separate:
 
-- Mock database tests in `server/zillowCache.test.js` passed, including failed-refresh preservation and cached reads that do not call the scraper.
-- Real database write/read was not run. `DATABASE_URL` and `PGHOST` are unset, and `node scripts/zillow-refresh.mjs` exited 1 with `missing_database`.
-- The production schedule is not active. The Railway deployment session has not installed a cron service, and this session has no Railway token.
-- Live ingestion was checked again at 2026-10-10T21:37:45Z. Direct fetch returned HTTP 403 and extracted 0 listings. That is still a block, not a successful scrape.
+- Mock tests passed, including city filtering of cached rows and failed-refresh preservation. `npm test` passed 61 tests. Those tests do not prove a Supabase round trip, a deployed schedule, or live extraction.
+- Real database write/read was not run. `DATABASE_URL` and `PGHOST` are unset, so `node scripts/verify-zillow-db.mjs` exited 1 with `missing_database`. The migration was not applied to Supabase.
+- The production schedule is not verified. The timer starts only inside a roost process that has `RAILWAY_ENVIRONMENT` or `ZILLOW_REFRESH_SCHEDULE=1`. This session has no Railway token. `https://roost-production-c7d0.up.railway.app/api/zillow-sales` returned HTTP 404 `Application not found` at 2026-10-10T22:54:45Z, so no deployed invocation was observed.
+- Live ingestion was checked again at 2026-10-10T22:55:01Z. Direct fetch of the Brooklyn URL with `--timeout 15 --limit 3` returned HTTP 403, exited 1, and extracted 0 listings. That is still a block, not a successful scrape. Scrapingdog remains untested because `SCRAPINGDOG_API_KEY` is unset. Saved HTML can exercise the parser only; it is not live data.
 
 ## Sample limitations
 

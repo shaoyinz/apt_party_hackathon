@@ -5,6 +5,18 @@ export const DEFAULT_ZILLOW_COVERAGE = [
     },
 ];
 
+export function sourcesForQuery(sources, query) {
+    const text = String(query || "").trim().toLowerCase();
+    if (!text)
+        return sources;
+    return sources.filter((source) => {
+        const label = String(source.label || "").toLowerCase();
+        if (label === text || label.startsWith(`${text},`) || label.startsWith(`${text} `))
+            return true;
+        return /^\d{5}$/.test(text) && label.split(/[^a-z0-9]+/).includes(text);
+    });
+}
+
 export function parseZillowCoverage(value) {
     const text = String(value || "").trim();
     if (!text)
@@ -53,6 +65,8 @@ export function saleStatusCopy(body) {
         return "Loading the Zillow sale cache. This does not start a scrape.";
     if (body.state === "database_unavailable")
         return "The sale cache database is unavailable. No sample sale listings are shown.";
+    if (body.state === "unknown_coverage")
+        return "That city or ZIP is not configured for Zillow scraping. No scrape was started.";
     if (body.state === "unavailable")
         return `No successful scrape is stored. Latest attempt: ${body.latest_attempt?.outcome || "none"}. This is not an empty market.`;
     if (body.state === "empty")
