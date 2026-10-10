@@ -1,0 +1,7 @@
+{
+  "commands": [
+    ["node", "scripts/run-check.mjs", "npm", "ci"],
+    ["node", "scripts/run-check.mjs", "npm", "test"],
+    ["node", "scripts/run-check.mjs", "npm", "run", "build"]
+  ]
+}
