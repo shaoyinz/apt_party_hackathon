@@ -101,6 +101,14 @@ textarea { min-height: 6.5rem; resize: vertical; }
   font-size: 0.75rem;
 }
 
+.source-list {
+  padding-left: 1.1rem;
+}
+
+.source-list li {
+  margin: 0.4rem 0;
+}
+
 .stamp {
   margin: 0;
   border: 2px solid var(--stamp);

@@ -1,6 +1,6 @@
 # Local preview
 
-Verified for the Roost prototype in this project directory. No databases, queues, or API credentials are required.
+Verified for the Roost prototype in this project directory. The Vite dev server also exposes `/api/listings`. No database or Facebook cookies are required. Craigslist refresh needs outbound HTTPS.
 
 ## Dependency setup
 
@@ -12,11 +12,11 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None. Listings are local fixtures.
+None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`.
 
 ## Environment prerequisites
 
-None for the app. Party checks may set `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR`. Do not put secrets in this file.
+Optional source override: `ROOST_LISTING_SOURCES`. Party checks may set `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR`. Do not put secret values in this file.
 
 ## Startup commands
 
@@ -40,7 +40,7 @@ The dev server must listen on `127.0.0.1`, not `0.0.0.0`. Vite is configured wit
 
 ## Verification
 
-`GET /` returns 200 and the page title is `Roost — sample housing search`. The area field is `#area`. A search for Sunnyvale with at least one priority shows sample listing cards. No external request is required.
+`GET /` returns 200 and the page title is `Roost — sample housing search`. `GET /api/listings` returns JSON. The area field is `#area`. A search for Sunnyvale with at least one priority shows sample listing cards. Craigslist refresh is optional for that check.
 
 ## Quirks and troubleshooting
 
