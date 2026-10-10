@@ -82,7 +82,7 @@ async function serveStatic(req, res) {
 
 const server = http.createServer(async (req, res) => {
   const url = req.url || "/";
-  if (url.startsWith("/api/listings") || url.startsWith("/api/demo-listings")) {
+  if (url.startsWith("/api/listings") || url.startsWith("/api/demo-listings") || url.startsWith("/api/redfin-")) {
     if (await connect(listings.middleware, req, res)) return;
   }
   if (url.startsWith("/api/location/")) {

@@ -35,7 +35,7 @@ Set these on the Railway service. Never commit values.
 
 ## Database
 
-The repository does not contain the nine-table listing schema (`groups`, `members`, `listings`, `attribute_definitions`, `listing_attributes`). `supabase/001_demo_listings.sql` assumes that schema already exists and is not applied automatically. Do not point a new empty PostgreSQL database at that file.
+The repository does not contain the nine-table listing schema (`groups`, `members`, `listings`, `attribute_definitions`, `listing_attributes`). `supabase/001_demo_listings.sql` and `supabase/002_redfin_listings.sql` assume that schema already exists and are not applied automatically. Do not point a new empty PostgreSQL database at those files.
 
 `supabase/002_zillow_sale_cache.sql` is self-contained. `scripts/migrate.mjs` applies it once when `DATABASE_URL` or `PGHOST` is set, and records the filename in `public.schema_migrations`. A migration error exits before the server listens, so the release fails. Existing rows are not deleted. If those variables are unset, migrations are skipped, listing save stays unavailable, and `GET /api/zillow-sales` returns 503. That is not a successful database release.
 

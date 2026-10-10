@@ -70,7 +70,7 @@ Contrasting Sunnyvale fixtures, with no budget:
 
 The default source is Craigslist South Bay apartments: `https://sfbay.craigslist.org/search/sby/apa`. Change `sources.json`, or set `ROOST_LISTING_SOURCES` to a comma-separated list of Craigslist search URLs, without editing fixtures. The fetcher rejects non-Craigslist hosts.
 
-No Facebook cookies are used. Facebook group refresh stopped after a login page. Redfin, Marketplace, and Apartments.com are not fetched. Zillow for-sale pages are not imported here; use the standalone scraper below. Do not pass its asking prices through monthly-rent filtering.
+No Facebook cookies are used. Facebook group refresh stopped after a login page. Zillow, Marketplace, and Apartments.com are not fetched by this importer. Redfin CSV collection is separate; see [docs/redfin-scraper.md](docs/redfin-scraper.md). Those prices are for-sale prices, not monthly rent. The dev server refreshes a local Redfin cache at startup if it is older than a day, and search reads that cache instead of scraping on each query.
 
 Refresh from the Craigslist import panel, which calls `POST /api/listings/refresh`. The fetcher is `scripts/fetch_craigslist.py`. It reads one search page per source, keeps at most 8 posts, times out at 20 seconds, and waits at least 60 seconds between refresh attempts. A failed refresh keeps `data/import-cache.json` and its last successful timestamp. That directory is gitignored.
 
@@ -146,7 +146,7 @@ Download JSON (`roost-search-feedback.json`) is created only when you click Down
 
 ## Deferred integrations
 
-Marketplace, importing Zillow into monthly-rent matching, Redfin, Facebook group scraping, Telegram, maps, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services.
+Marketplace, Zillow, Facebook group scraping, Telegram, maps, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services. Redfin can be collected to CSV with the separate scraper; database, UI, scheduling, and cross-source matching stay deferred.
 
 Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). Sample fixtures and Craigslist imports stay separately labeled.
 
