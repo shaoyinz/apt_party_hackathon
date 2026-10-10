@@ -36,6 +36,8 @@ export function adaptListing(row) {
 }
 
 export async function fetchDemoListings() {
+  if (!supabase)
+    return [];
   const { data, error } = await supabase
     .from("listings")
     .select("id,demo_fixture_id,title,city,neighborhood,price_monthly,beds,sqft,room_type,furnished,pets,parking,lease_months,demo_commute_minutes")

@@ -16,7 +16,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Environment prerequisites
 
-Optional source override: `ROOST_LISTING_SOURCES`. `.env.example` lists `XDG_CACHE_HOME` and `PARTY_OUTPUT_DIR` by name only. Do not put secrets in this file or in `.env`.
+Optional source override: `ROOST_LISTING_SOURCES`. Supabase demo listings need `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. If either name is unset, the page uses local sample fixtures instead of failing to render. Do not put secrets in this file or in `.env`.
 
 ## Startup commands
 
