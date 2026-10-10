@@ -1,4 +1,4 @@
-export const LISTINGS = [
+const RAW_LISTINGS = [
     {
         id: "sunnyvale-thrift",
         title: "Maple Court 1BR",
@@ -180,3 +180,30 @@ export const LISTINGS = [
         commuteMinutes: 40,
     },
 ];
+const LISTED_ON = {
+    "sunnyvale-thrift": "2026-09-02",
+    "sunnyvale-close": "2026-10-01",
+    "sunnyvale-unknown-rent": "2026-08-18",
+    "santa-clara-room": "2026-09-20",
+    "santa-clara-house": "2026-07-30",
+    "mv-castro": "2026-10-04",
+    "mv-furnished": "2026-09-12",
+    "cupertino-village": "2026-09-28",
+    "cupertino-studio": "2026-08-04",
+    "sj-santana": "2026-10-06",
+    "sj-downtown": "2026-09-15",
+    "sj-unknown-space": "2026-08-22",
+};
+const SAMPLE_CONTACTS = {
+    "sunnyvale-close": { name: "Sample agent Lee", phone: "(408) 555-0142" },
+    "mv-castro": { name: "Sample agent Chen", phone: "(650) 555-0198" },
+    "cupertino-village": { name: "Sample agent Patel", phone: "(408) 555-0177" },
+    "sj-santana": { name: "Sample agent Diaz", phone: "(408) 555-0114" },
+};
+export const LISTINGS = RAW_LISTINGS.map((listing) => ({
+    ...listing,
+    address: null,
+    source: "Sample fixture",
+    listedOn: LISTED_ON[listing.id] ?? null,
+    contact: SAMPLE_CONTACTS[listing.id] ?? null,
+}));

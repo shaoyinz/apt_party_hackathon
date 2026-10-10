@@ -1,4 +1,5 @@
-import { emptyState, isPriorityId } from "./model";
+import { sanitizeGroups } from "./groups";
+import { emptyState, isPriorityId, VIEWS } from "./model";
 export const STORAGE_KEY = "roost-prototype-v1";
 const INVALID_WARNING = "Saved search data in this browser was unreadable, so Roost started fresh. New changes can still be saved here.";
 const UNAVAILABLE_WARNING = "This browser is not keeping a saved copy. You can still search and export during this visit. A reload may clear your entries.";
@@ -17,7 +18,7 @@ export function loadState(store) {
     const parsed = parseState(raw);
     if (!parsed)
         return { state: emptyState(), warning: INVALID_WARNING };
-    return { state: parsed, warning: null };
+    return parsed;
 }
 export function saveState(store, state) {
     if (!store)
@@ -61,7 +62,7 @@ function parseState(raw) {
             return null;
         const record = value;
         const mode = record.mode === "roommates" ? "roommates" : record.mode === "solo" ? "solo" : null;
-        const view = record.view === "results" ? "results" : record.view === "setup" ? "setup" : null;
+        const view = VIEWS.includes(record.view) ? record.view : null;
         if (!mode || !view)
             return null;
         if (typeof record.area !== "string" || typeof record.budgetText !== "string")
@@ -75,15 +76,26 @@ function parseState(raw) {
         const useful = parseUseful(record.useful);
         if (!priorities || !useful)
             return null;
+        const groups = sanitizeGroups(record.groups);
+        const theme = record.theme === "dark" ? "dark" : "light";
+        const activeGroupId = typeof record.activeGroupId === "string" ? record.activeGroupId : null;
+        const activeMemberId = typeof record.activeMemberId === "string" ? record.activeMemberId : null;
         return {
-            area: record.area,
-            mode: mode,
-            householdSize,
-            budgetText: record.budgetText,
-            priorities,
-            useful,
-            generalFeedback: record.generalFeedback,
-            view,
+            state: {
+                area: record.area,
+                mode: mode,
+                householdSize,
+                budgetText: record.budgetText,
+                priorities,
+                useful,
+                generalFeedback: record.generalFeedback,
+                view,
+                theme,
+                groups: groups.groups,
+                activeGroupId,
+                activeMemberId,
+            },
+            warning: groups.ok ? null : "Saved group data in this browser was unreadable, so group activity started fresh. Your saved search was kept.",
         };
     }
     catch {

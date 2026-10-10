@@ -56,6 +56,35 @@ describe("local persistence", () => {
         expect(saveState(broken, emptyState())).toMatch(/not keeping a saved copy/i);
         expect(loadState(null).warning).toMatch(/not keeping a saved copy/i);
     });
+    it("loads a saved search that predates groups", () => {
+        const store = memoryStore(JSON.stringify({
+            area: "San Jose",
+            mode: "solo",
+            householdSize: null,
+            budgetText: "",
+            priorities: ["price"],
+            useful: [],
+            generalFeedback: "",
+            view: "results",
+        }));
+        const loaded = loadState(store);
+        expect(loaded.warning).toBeNull();
+        expect(loaded.state.area).toBe("San Jose");
+        expect(loaded.state.groups).toEqual([]);
+        expect(loaded.state.view).toBe("results");
+    });
+    it("keeps the search when group data is corrupt", () => {
+        const store = memoryStore(JSON.stringify({
+            ...emptyState(),
+            area: "Cupertino",
+            view: "setup",
+            groups: { bad: true },
+        }));
+        const loaded = loadState(store);
+        expect(loaded.state.area).toBe("Cupertino");
+        expect(loaded.state.groups).toEqual([]);
+        expect(loaded.warning).toMatch(/group data/i);
+    });
     it("clears stored state on reset", () => {
         const store = memoryStore();
         saveState(store, { ...emptyState(), area: "Cupertino", view: "results" });

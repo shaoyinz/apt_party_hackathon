@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LISTINGS } from "./fixtures";
 import { buildExport } from "./feedback";
+import { GroupDemo } from "./groupDemo";
 import { rankListings } from "./matching";
 import { AREA_SUGGESTIONS, DEMO_COMMUTE_DESTINATION, LEASE_FLEX_MAX_MONTHS, PRIORITY_IDS, PRIORITY_LABELS, emptyState, formatMoney, leaseFact, parseBudget, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
@@ -11,11 +12,25 @@ export function App() {
     const [warning, setWarning] = useState(initial.warning);
     const [errors, setErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
+    const [route, setRoute] = useState(() => readRoute());
     useEffect(() => {
         const next = saveState(store, state);
         if (next)
             setWarning(next);
     }, [state]);
+    useEffect(() => {
+        document.documentElement.dataset.theme = state.theme === "dark" ? "dark" : "light";
+    }, [state.theme]);
+    useEffect(() => {
+        const apply = () => setRoute(readRoute());
+        window.addEventListener("hashchange", apply);
+        return () => window.removeEventListener("hashchange", apply);
+    }, []);
+    useEffect(() => {
+        const meta = ensureRobots();
+        const privateView = route.kind === "join" || route.kind === "feed" || route.kind === "compare" || route.kind === "group";
+        meta.content = privateView ? "noindex, nofollow" : "index, follow";
+    }, [route]);
     const parsedBudget = parseBudget(state.budgetText);
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
     const outcome = useMemo(() => rankListings(LISTINGS, state.area, budget, state.priorities), [state.area, budget, state.priorities]);
@@ -34,6 +49,7 @@ export function App() {
         if (Object.keys(nextErrors).length > 0)
             return;
         update({ view: "results" });
+        window.location.hash = "/results";
     }
     function movePriority(index, direction) {
         const next = [...state.priorities];
@@ -58,34 +74,46 @@ export function App() {
         });
     }
     function reset() {
-        if (!window.confirm("Reset this browser's saved search, useful listings, and feedback?"))
+        if (!window.confirm("Reset this browser's saved search, group demo, shortlist, and feedback?"))
             return;
         const nextWarning = clearState(store);
         setState(emptyState());
         setErrors({});
         setSubmitted(false);
         setWarning(nextWarning);
+        window.location.hash = "/";
     }
-    return (<div className="page">
-      <header className="mast">
+    function replaceGroup(group, extra = {}) {
+        setState((current) => ({
+            ...current,
+            ...extra,
+            groups: current.groups.map((item) => item.id === group.id ? group : item),
+            activeGroupId: group.id,
+            activeMemberId: extra.activeMemberId ?? current.activeMemberId,
+        }));
+    }
+    const groupView = route.kind === "home" || route.kind === "join" || route.kind === "feed" || route.kind === "compare" || route.kind === "group";
+    return (<div className={groupView ? "page wide" : "page"}>
+      {groupView ? null : <header className="mast">
         <p className="stamp">Sample data</p>
         <div>
           <p className="eyebrow">South Bay scratch prototype</p>
           <h1>Roost</h1>
         </div>
-      </header>
-      <p className="banner" role="note">
+        <a className="btn" href="#/">Groups</a>
+      </header>}
+      {groupView ? null : <p className="banner" role="note">
         These listings are fixtures, not live availability. Roost is not checking current listings,
-        calculating your route, verifying reviews, or making an AI recommendation. Nothing is sent
-        to the team unless you share an export yourself.
-      </p>
-      {warning ? (<p className="warning" role="status">
+        calculating your route, verifying reviews, or making an AI recommendation. Group activity
+        stays in this browser. Nothing is sent to the team unless you share an export yourself.
+      </p>}
+      {groupView ? null : (warning ? (<p className="warning" role="status">
           {warning} Saved data stays in this browser only.
-        </p>) : (<p className="local-note">Search, shortlist, and feedback stay in this browser only.</p>)}
+        </p>) : (<p className="local-note">Search, shortlist, and feedback stay in this browser only.</p>))}
 
-      {state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => update({ view: "setup" })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+      {route.kind === "setup" || route.kind === "results" ? (route.kind === "results" ? (<Results state={state} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} budget={budget} outside={outside} titles={titles} onEdit={() => { update({ view: "setup" }); window.location.hash = "/search"; }} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>) : (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>)) : route.kind === "feedback" ? null : (<GroupDemo state={state} warning={warning} route={route} onPatch={update} onReplaceGroup={replaceGroup} onReset={reset}/>)}
 
-      <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>
+      {groupView ? null : <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={route.kind === "setup"}/>}
     </div>);
 }
 function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onAdd, onRemove, onMove, onSubmit, }) {
@@ -282,7 +310,7 @@ function ListingCard({ item, rank, useful, onToggle, onNote, }) {
       <dl className="facts">
         <div>
           <dt>Total monthly rent</dt>
-          <dd>{listing.rent == null ? "Unknown" : formatMoney(listing.rent)}</dd>
+          <dd>{listing.rent == null ? "Not listed" : formatMoney(listing.rent)}</dd>
         </div>
         <div>
           <dt>Beds / room type</dt>
@@ -308,8 +336,8 @@ function ListingCard({ item, rank, useful, onToggle, onNote, }) {
           <dt>Sample commute</dt>
           <dd>
             {listing.commuteMinutes == null
-            ? `Unknown. Estimates, when present, are to ${DEMO_COMMUTE_DESTINATION}.`
-            : `${listing.commuteMinutes} min to ${DEMO_COMMUTE_DESTINATION}`}
+            ? `Not listed. Estimates, when present, are sample minutes to ${DEMO_COMMUTE_DESTINATION}.`
+            : `${listing.commuteMinutes} min sample to ${DEMO_COMMUTE_DESTINATION}`}
           </dd>
         </div>
       </dl>
@@ -404,6 +432,31 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
           </button>) : null}
       </div>
     </section>);
+}
+function readRoute() {
+    const hash = window.location.hash.replace(/^#/, "");
+    const join = hash.match(/^\/join\/([^/]+)$/);
+    if (join)
+        return { kind: "join", token: decodeURIComponent(join[1]) };
+    const scoped = hash.match(/^\/g\/([^/]+)\/(feed|compare|group)$/);
+    if (scoped)
+        return { kind: scoped[2], groupId: decodeURIComponent(scoped[1]) };
+    if (hash === "/search")
+        return { kind: "setup" };
+    if (hash === "/results")
+        return { kind: "results" };
+    if (hash === "/feedback")
+        return { kind: "feedback" };
+    return { kind: "home" };
+}
+function ensureRobots() {
+    let meta = document.querySelector('meta[name="robots"]');
+    if (!meta) {
+        meta = document.createElement("meta");
+        meta.setAttribute("name", "robots");
+        document.head.appendChild(meta);
+    }
+    return meta;
 }
 function downloadJson(json) {
     const blob = new Blob([json + "\n"], { type: "application/json" });

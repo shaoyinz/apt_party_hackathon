@@ -137,6 +137,12 @@ function isFavorable(listing, priority) {
             return listing.leaseMonths != null && listing.leaseMonths <= LEASE_FLEX_MAX_MONTHS;
     }
 }
+export function preferenceWeightScore(listing, priorities) {
+    if (!priorities.length)
+        return null;
+    const weights = priorities.map((_, index) => priorities.length - index);
+    return priorities.reduce((total, priority, index) => total + weights[index] * featureScore(listing, priority), 0);
+}
 export function rankListings(listings, area, budget, priorities) {
     const inArea = listings.filter((listing) => listingMatchesArea(listing, area));
     const excludedUnknownRent = inArea.filter((listing) => budget != null && listing.rent == null).length;
