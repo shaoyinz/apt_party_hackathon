@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "id": "sby-apa",
+      "url": "https://sfbay.craigslist.org/search/sby/apa",
+      "label": "Craigslist South Bay apartments"
+    }
+  ],
+  "limits": {
+    "postsPerGroup": 8,
+    "navigationTimeoutMs": 20000,
+    "minRefreshIntervalMs": 60000
+  }
+}

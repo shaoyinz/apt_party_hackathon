@@ -1,9 +1,12 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { listingsPlugin } from "./server/listingsPlugin.js";
+const root = path.dirname(fileURLToPath(import.meta.url));
 const cacheRoot = process.env.XDG_CACHE_HOME;
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), listingsPlugin(root)],
     server: {
         host: "127.0.0.1",
         allowedHosts: true,
