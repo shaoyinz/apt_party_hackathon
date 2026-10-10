@@ -121,7 +121,7 @@ export function ImportFlow({ onClose, onSaved }) {
       </div>
       <p className="help">One listing at a time, shared only with your hunting group. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
       {health?.database !== "ok" ? (<p className="warning" role="status">Database save is not available yet{health?.databaseReason ? `: ${health.databaseReason}` : ""}. You can still prepare a draft.</p>) : null}
-      {health?.ocr === "unavailable" ? (<p className="warning" role="status">Screenshot OCR is not installed here. Screenshots can be stored, and you can type the facts.</p>) : null}
+      {health?.ocr === "unavailable" ? (<p className="warning" role="status">Python OCR is not installed. Screenshots can still be stored, and you can type the facts.</p>) : null}
       {sessionError ? <p className="error" role="alert">{sessionError}</p> : null}
       {status ? <p className="local-note" role="status">{status}</p> : null}
       {phase !== "review" && phase !== "saved" ? (<div>

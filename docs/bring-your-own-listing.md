@@ -37,7 +37,13 @@ Screenshot files live under ignored `data/listings/<group>/<listing>/` and are s
 
 Fetches allow public HTTP(S) only, follow at most 3 redirects, stop at 8 seconds, and read at most 1.5 MB. Each hop is checked against loopback, private, link-local, and similar destinations. Login walls and blocked pages are not bypassed.
 
-OCR uses the `tesseract` binary, or `TESSERACT_BIN`. If it is missing, screenshot text is not invented; the user can type the facts and still save the images.
+Screenshot OCR uses Python, not a separate `tesseract` install. From this directory:
+
+```bash
+python3 -m pip install -r scripts/requirements-ocr.txt
+```
+
+`scripts/ocr_screenshot.py` runs RapidOCR and returns the text the Node API parses. If that package is missing, screenshot text is not invented; the user can type the facts and still save the images.
 
 ## Checks
 

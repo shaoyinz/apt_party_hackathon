@@ -1,39 +1,39 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
+const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../scripts/ocr_screenshot.py");
 
 export async function ocrStatus() {
-    const binary = process.env.TESSERACT_BIN || "tesseract";
     try {
-        await execFileAsync(binary, ["--version"], { timeout: 3000 });
-        return { available: true, binary };
+        const result = await execFileAsync("python3", [scriptPath, "--check"], { timeout: 15000 });
+        const payload = JSON.parse(result.stdout);
+        return { available: payload.ok === true, engine: payload.engine || "python" };
     }
     catch {
-        try {
-            await access("/usr/bin/tesseract");
-            return { available: true, binary: "/usr/bin/tesseract" };
-        }
-        catch {
-            return { available: false, binary };
-        }
+        return { available: false, engine: "python" };
     }
 }
 
 export async function readImageText(filePath) {
-    const status = await ocrStatus();
-    if (!status.available) {
-        return { ok: false, code: "ocr_unavailable", message: "Screenshot text extraction is unavailable on this machine. Enter the facts yourself or retry later." };
-    }
     try {
-        const result = await execFileAsync(status.binary, [filePath, "stdout", "-l", "eng"], {
-            timeout: 20000,
-            maxBuffer: 2_000_000,
+        const result = await execFileAsync("python3", [scriptPath, filePath], {
+            timeout: 60000,
+            maxBuffer: 4_000_000,
         });
-        return { ok: true, text: result.stdout || "" };
+        const payload = JSON.parse(lastJson(result.stdout));
+        if (!payload.ok)
+            return { ok: false, code: payload.code || "ocr_failed", message: payload.message || "Screenshot text could not be read." };
+        return { ok: true, text: payload.text || "" };
     }
     catch {
         return { ok: false, code: "ocr_failed", message: "Roost could not read text from one or more screenshots. You can still enter the facts yourself." };
     }
+}
+
+function lastJson(stdout) {
+    const lines = String(stdout || "").trim().split("\n").filter(Boolean);
+    return lines[lines.length - 1] || "{}";
 }

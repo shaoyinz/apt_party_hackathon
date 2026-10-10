@@ -12,7 +12,7 @@ Node.js 24 and npm 11 were used. `npm ci` installs from `package-lock.json`.
 
 ## Required services
 
-None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Optional PostgreSQL when `DATABASE_URL` or `PGHOST` is set. Optional `tesseract` for screenshot OCR. Variable names are in `.env.example`.
+None for the sample UI. `POST /api/listings/refresh` shells out to `python3 scripts/fetch_craigslist.py`. Optional PostgreSQL when `DATABASE_URL` or `PGHOST` is set. Screenshot OCR uses `python3 -m pip install -r scripts/requirements-ocr.txt`. Variable names are in `.env.example`.
 
 ## Environment prerequisites
 
