@@ -1,4 +1,6 @@
-export const LISTINGS = [
+import { retainListingSource } from "./sourceLink";
+
+const SAMPLE_LISTINGS = [
     {
         id: "sunnyvale-thrift",
         title: "Maple Court 1BR",
@@ -180,3 +182,5 @@ export const LISTINGS = [
         coordinates: { lat: 37.3484, lon: -121.8946, precision: "approximate" },
     },
 ];
+
+export const LISTINGS = SAMPLE_LISTINGS.map((listing) => retainListingSource(listing));

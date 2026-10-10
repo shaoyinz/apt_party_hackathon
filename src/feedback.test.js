@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildExport } from "./feedback";
+import { LISTINGS } from "./fixtures";
 import { emptyState, SCHEMA_VERSION } from "./model";
+import { SAMPLE_SOURCE_URL } from "./sourceLink";
 describe("feedback export", () => {
     it("includes current inputs, ordered priorities, notes, and sample designation", () => {
         const state = {
@@ -21,6 +23,7 @@ describe("feedback export", () => {
             generalFeedback: "Need in-unit laundry",
         };
         const exported = buildExport(state, new Map([["mv-castro", "Castro walk-up"]]), new Set(["mv-castro"]), {
+            listings: LISTINGS,
             resolutionStatus: "ok",
             listingMetrics: [{ id: "mv-castro", originPrecision: "approximate", commute: { status: "ok", minutes: 18 }, convenience: { status: "unavailable" } }],
         });
@@ -50,7 +53,7 @@ describe("feedback export", () => {
                     note: "Close to the demo station",
                     currentlyMatching: true,
                     origin: "sample",
-                    sourceUrl: null,
+                    sourceUrl: SAMPLE_SOURCE_URL,
                 },
             ],
             generalFeedback: "Need in-unit laundry",
@@ -62,7 +65,7 @@ describe("feedback export", () => {
             area: "Cupertino",
             useful: [{ id: "sunnyvale-thrift", note: "" }],
         };
-        const exported = buildExport(state, new Map([["sunnyvale-thrift", "Maple Court 1BR"]]), new Set());
+        const exported = buildExport(state, new Map([["sunnyvale-thrift", "Maple Court 1BR"]]), new Set(), { listings: LISTINGS });
         expect(exported.generalFeedback).toBe("");
         expect(exported.totalMonthlyBudget).toBeNull();
         expect(exported.householdSize).toBeNull();
@@ -73,7 +76,7 @@ describe("feedback export", () => {
                 note: "",
                 currentlyMatching: false,
                 origin: "sample",
-                sourceUrl: null,
+                sourceUrl: SAMPLE_SOURCE_URL,
             },
         ]);
         expect(exported.sampleData).toBe(true);
