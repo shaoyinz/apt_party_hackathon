@@ -9,18 +9,20 @@ export function failureMessage(pathName, status, text) {
   return body ? `${pathName} returned ${status}: ${body}` : `${pathName} returned ${status}`;
 }
 
+export function assertJsonBody(pathName, body, options = {}) {
+  if (pathName !== "/api/health") return;
+  if (body.ocr !== "available") {
+    const reason = body.ocrReason ? `: ${String(body.ocrReason).slice(0, 240)}` : "";
+    throw new Error(`OCR is unavailable${reason}`);
+  }
+  if (options.databaseRequired && body.database !== "ok") throw new Error("Database health failed");
+}
+
 async function check(pathName, expectJson) {
   const response = await fetch(`${base}${pathName}`);
   const text = await response.text();
   if (!response.ok) throw new Error(failureMessage(pathName, response.status, text));
-  if (expectJson) {
-    const body = JSON.parse(text);
-    if (body.ocr !== "available") {
-      const reason = body.ocrReason ? `: ${String(body.ocrReason).slice(0, 240)}` : "";
-      throw new Error(`OCR is unavailable${reason}`);
-    }
-    if (process.env.DATABASE_URL && body.database !== "ok") throw new Error("Database health failed");
-  }
+  if (expectJson) assertJsonBody(pathName, JSON.parse(text), { databaseRequired: Boolean(process.env.DATABASE_URL) });
   return text.slice(0, 80);
 }
 
