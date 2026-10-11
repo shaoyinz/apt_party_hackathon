@@ -1,13 +1,24 @@
+import { isRealListing } from "./catalogSelection";
 import { PACIFIC_TZ, SCHEMA_VERSION, listingOrigin, parseBudget } from "./model";
 export function buildExport(state, titles, matchingIds, context = {}) {
     const parsed = parseBudget(state.budgetText);
     const listings = context.listings ?? [];
     const byId = new Map(listings.map((listing) => [listing.id, listing]));
+    const catalogMode = context.catalogMode ?? "sample";
     const confirmed = state.confirmedDestination?.query === state.destination.trim() ? state.confirmedDestination.place : null;
+    const usefulListings = state.useful.flatMap((item) => {
+        const listing = byId.get(item.id);
+        if (catalogMode !== "sample" && (!listing || !isRealListing(listing)))
+            return [];
+        return [toExportUseful(item, titles, matchingIds, byId)];
+    });
     return {
         schemaVersion: SCHEMA_VERSION,
-        sampleData: true,
+        sampleData: catalogMode === "sample",
+        catalogMode,
         includesImportedData: listings.some((listing) => listingOrigin(listing) === "imported"),
+        includesUserProvidedData: listings.some((listing) => listing.origin === "user-provided"),
+        includesScrapedData: listings.some((listing) => listing.origin === "redfin"),
         liveImport: context.liveImport ?? { status: "not_loaded", importedAt: null, errorCode: null },
         area: state.area.trim(),
         huntingMode: state.mode,
@@ -22,8 +33,8 @@ export function buildExport(state, titles, matchingIds, context = {}) {
             resolvedDestination: confirmed,
             resolutionStatus: context.resolutionStatus ?? "not_calculated",
         },
-        listingMetrics: context.listingMetrics ?? [],
-        usefulListings: state.useful.map((item) => toExportUseful(item, titles, matchingIds, byId)),
+        listingMetrics: (context.listingMetrics ?? []).filter((metric) => catalogMode === "sample" || isRealListing(byId.get(metric.id))),
+        usefulListings,
         generalFeedback: state.generalFeedback,
     };
 }

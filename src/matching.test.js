@@ -71,6 +71,12 @@ describe("ranking", () => {
         expect(convenienceFirst[0]).toBe("sunnyvale-close");
         expect(priceFirst).not.toEqual(commuteFirst);
     });
+    it("does not rank a for-sale price as monthly rent", () => {
+        const sale = { id: "sale-only", title: "Sale", city: "Sunnyvale", neighborhood: "", rent: null, rentBasis: "for-sale", salePriceText: "$900,000", beds: 2, sqft: 900, furnished: null, pets: null, parking: null, leaseMonths: null, origin: "redfin" };
+        const open = rankListings([sale], "Sunnyvale", null, ["price"]);
+        expect(open.areaKnown).toBe(true);
+        expect(open.eligible).toEqual([]);
+    });
     it("does not treat missing calculations or fixture leftovers as a favorable commute", () => {
         const outcome = rankListings(LISTINGS, "Sunnyvale", null, ["commute", "convenience"]);
         const close = outcome.eligible.find((item) => item.listing.id === "sunnyvale-close");

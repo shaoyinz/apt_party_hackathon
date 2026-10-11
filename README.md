@@ -1,6 +1,6 @@
 # Roost interactive prototype
 
-Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship with the app. A dev-server importer can add unverified Craigslist posts. Bring your own listing can extract a public link or screenshots, then save to PostgreSQL when database credentials are configured. Commute and convenience calculations use public OpenStreetMap services and published VTA/Caltrain schedules. No API keys are required for those location services.
+Scratch version of Roost for solo renters and roommate households. Sample fixtures still ship for the initial demo. Once a user-provided or scraped listing is available, Roost uses only those real listings and does not mix samples back in. A dev-server importer can add unverified Craigslist posts. Bring your own listing can extract a public link or screenshots, then save to PostgreSQL when database credentials are configured. Commute and convenience calculations use public OpenStreetMap services and published VTA/Caltrain schedules. No API keys are required for those location services.
 
 ## Status
 
@@ -148,7 +148,7 @@ Download JSON (`roost-search-feedback.json`) is created only when you click Down
 
 Marketplace, Zillow, Facebook group scraping, Telegram, maps, invitations, voting, realtime collaboration, external reviews, and webhook hosting are out of scope. Do not treat any control in this prototype as one of those services. Redfin can be collected to CSV with the separate scraper; database, UI, scheduling, and cross-source matching stay deferred.
 
-Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). Sample fixtures and Craigslist imports stay separately labeled.
+Bring your own listing is documented in [docs/bring-your-own-listing.md](docs/bring-your-own-listing.md). Sample fixtures stay labeled only before real data exists. A saved or scraped listing suppresses samples across search, groups, comparison, and exports.
 
 ## Location services
 
