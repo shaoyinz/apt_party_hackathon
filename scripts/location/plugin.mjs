@@ -26,7 +26,7 @@ async function handle(req, res, next) {
             return;
         }
         if (url.startsWith("/api/location/geocode")) {
-            send(res, 200, await geocodeQuery(body.query));
+            send(res, 200, await geocodeQuery(body.query, { purpose: body.purpose }));
             return;
         }
         if (url.startsWith("/api/location/routes")) {

@@ -111,6 +111,20 @@ export function createMemoryRepository() {
                 return null;
             return publicListing(row, attributes.get(row.id) || []);
         },
+        async updateImportLocation(input) {
+            const row = listings.get(input.id);
+            if (!row || row.group_id !== input.groupId)
+                return null;
+            row.address = input.address;
+            row.city = input.city;
+            const confidence = { ...(row.field_confidence || {}), city: input.city };
+            if (input.location)
+                confidence.location = input.location;
+            else
+                delete confidence.location;
+            row.field_confidence = confidence;
+            return publicListing(row, attributes.get(row.id) || []);
+        },
     };
 }
 
@@ -139,5 +153,6 @@ function publicListing(row, attrs) {
         status: row.status,
         amenities: attrs.map((item) => item.name),
         fieldConfidence: row.field_confidence,
+        location: row.field_confidence?.location || null,
     };
 }

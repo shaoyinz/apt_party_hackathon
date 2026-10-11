@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { geocodeListing } from "../scripts/location/handle.mjs";
 import { createHandler } from "./handler.js";
 import { ocrStatus } from "./ocr.js";
 import { createPgRepository, databaseConfig } from "./pgRepository.js";
@@ -18,6 +19,7 @@ export async function createDevHandler() {
         testResolver: process.env.ENABLE_TEST_RESOLVER === "true",
         dataRoot: process.env.ROOST_DATA_DIR || path.join(root, "data"),
         ocrStatus,
+        geocodeListing,
     });
 }
 

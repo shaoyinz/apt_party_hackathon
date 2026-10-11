@@ -1,6 +1,7 @@
 import { distanceMeters } from "../../src/location/geo.js";
 import { convenienceFromElements } from "../../src/location/score.js";
 import { nearestStopMeters, planTransit } from "../../src/location/plan.js";
+import { classifyListingGeocode } from "../../src/location/listingGeo.js";
 import { classifyPlaces, interpretOsrm, suggestionPlaces } from "../../src/location/places.js";
 import { parsePacificLocal } from "../../src/location/time.js";
 import { getTransitGraph, userAgent } from "./gtfs.mjs";
@@ -19,25 +20,34 @@ const TRANSIT_SOURCE = "VTA and Caltrain GTFS with OpenStreetMap walking connect
 const geocodeCache = new Map();
 const suggestCache = new Map();
 const amenityCache = new Map();
-export async function geocodeQuery(query) {
+export async function geocodeQuery(query, options = {}) {
     const trimmed = String(query ?? "").trim();
-    if (!trimmed)
-        return { status: "not_found", message: "Enter a destination.", candidates: [] };
-    if (geocodeCache.has(trimmed))
-        return geocodeCache.get(trimmed);
+    const purpose = options.purpose === "listing" ? "listing" : "destination";
+    if (!trimmed) {
+        return purpose === "listing"
+            ? { status: "not_found", message: "Add an address or city.", candidates: [], place: null }
+            : { status: "not_found", message: "Enter a destination.", candidates: [] };
+    }
+    const key = `${purpose}:${trimmed}`;
+    if (geocodeCache.has(key))
+        return geocodeCache.get(key);
     const url = new URL("/search", NOMINATIM);
     url.searchParams.set("q", trimmed);
     url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("addressdetails", "1");
     url.searchParams.set("limit", "5");
     url.searchParams.set("countrycodes", "us");
     url.searchParams.set("viewbox", "-122.55,37.85,-121.65,37.15");
     const response = await fetch(url, { headers: { "User-Agent": userAgent() }, signal: AbortSignal.timeout(20000) });
     if (!response.ok)
         return { status: "provider_failure", message: "Geocoding failed. Retry to try again.", candidates: [] };
-    const result = classifyPlaces(await response.json());
-    if (result.status === "ok" || result.status === "ambiguous" || result.status === "not_found")
-        geocodeCache.set(trimmed, result);
+    const result = purpose === "listing" ? classifyListingGeocode(await response.json()) : classifyPlaces(await response.json());
+    if (result.status === "ok" || result.status === "ambiguous" || result.status === "not_found" || result.status === "approximate")
+        geocodeCache.set(key, result);
     return result;
+}
+export function geocodeListing(query) {
+    return geocodeQuery(query, { purpose: "listing" });
 }
 export async function suggestQuery(query) {
     const trimmed = String(query ?? "").trim();

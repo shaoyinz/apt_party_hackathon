@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { extractFacts, extractFromHtml, mergeExtractions } from "../src/import/facts.js";
+import { listingGeocodeQuery, matchConfirmedPlace } from "../src/location/listingGeo.js";
 import { fetchPublicPage, PageFetchError } from "../src/import/fetchPage.js";
 import { DestinationError, assertSaveableUrl } from "../src/import/ssrf.js";
 import { FETCH_LIMIT_LABEL, UPLOAD_LIMIT_LABEL } from "../src/import/limits.js";
@@ -84,6 +85,18 @@ export function createHandler(options) {
             if (req.method === "GET" && imageMatch) {
                 return sendImage(res, dataRoot, session.groupId, imageMatch[1], imageMatch[2], options.repository);
             }
+            const locationUpdate = url.pathname.match(/^\/api\/imports\/saved\/([^/]+)\/location$/);
+            if (req.method === "POST" && locationUpdate) {
+                const body = await readJson(req);
+                const result = await updateSavedLocation({
+                    listingId: decodeURIComponent(locationUpdate[1]),
+                    body,
+                    session,
+                    repository: options.repository,
+                    geocodeListing: options.geocodeListing,
+                });
+                return send(res, result.status, result.payload);
+            }
             if (req.method === "POST" && url.pathname === "/api/imports/extract") {
                 const body = await readJson(req);
                 return send(res, 200, await extractImport({ body, session, drafts, dataRoot, fetchPage: options.fetchPage }));
@@ -99,7 +112,14 @@ export function createHandler(options) {
             }
             if (req.method === "POST" && url.pathname === "/api/imports/confirm") {
                 const body = await readJson(req);
-                const result = await confirmImport({ body, session, drafts, dataRoot, repository: options.repository });
+                const result = await confirmImport({
+                    body,
+                    session,
+                    drafts,
+                    dataRoot,
+                    repository: options.repository,
+                    geocodeListing: options.geocodeListing,
+                });
                 return send(res, result.status, result.payload);
             }
             return send(res, 404, { error: "Not found." });
@@ -250,7 +270,7 @@ async function extractImport({ body, session, drafts, dataRoot, fetchPage }) {
     };
 }
 
-async function confirmImport({ body, session, drafts, dataRoot, repository }) {
+async function confirmImport({ body, session, drafts, dataRoot, repository, geocodeListing }) {
     if (body.confirmed !== true)
         return { status: 400, payload: { error: "Confirm the draft before saving. Nothing was stored." } };
     if (!repository)
@@ -273,6 +293,9 @@ async function confirmImport({ body, session, drafts, dataRoot, repository }) {
     const record = sanitizeRecord(body.fields || {}, draft, body);
     if (!record.ok)
         return { status: 400, payload: { error: record.message, draftPreserved: true } };
+    const located = await attachLocation(body, record.value, geocodeListing);
+    if (!located.ok)
+        return { status: 400, payload: { error: located.message, draftPreserved: true } };
     const listingId = idFromKey(session.groupId, idempotencyKey);
     const imageUrls = [];
     const files = draft?.files || [];
@@ -301,6 +324,7 @@ async function confirmImport({ body, session, drafts, dataRoot, repository }) {
                     neighborhood: record.value.neighborhood,
                     conflicts: body.conflicts || [],
                     origins: body.origins || {},
+                    location: located.location,
                 },
             },
             attributes: Array.isArray(body.attributes) ? body.attributes.filter((item) => item && typeof item.name === "string" && item.value != null) : [],
@@ -308,12 +332,102 @@ async function confirmImport({ body, session, drafts, dataRoot, repository }) {
         if (draft)
             drafts.delete(body.draftId);
         const listings = await repository.listGroup(session.groupId);
-        return { status: 200, payload: { ok: true, created: saved.created, id: saved.id, listings } };
+        return { status: 200, payload: { ok: true, created: saved.created, id: saved.id, listings, locationStatus: located.warning || null } };
     }
     catch {
         await rm(path.join(dataRoot, "listings", session.groupId, listingId), { recursive: true, force: true });
         return { status: 503, payload: { error: "Save failed before the listing was committed. Nothing was added to search. Correct the draft and retry.", draftPreserved: true } };
     }
+}
+
+async function updateSavedLocation({ listingId, body, session, repository, geocodeListing }) {
+    if (!repository?.updateImportLocation)
+        return { status: 503, payload: { error: databaseBlocker() } };
+    const existing = await repository.getForGroup(listingId, session.groupId);
+    if (!existing)
+        return { status: 404, payload: { error: "That listing is not in this group." } };
+    const address = body.address != null ? textOrNull(body.address) : existing.address;
+    const city = body.city != null ? textOrNull(body.city) : existing.city;
+    const changed = (address || null) !== (existing.address || null) || (city || null) !== (existing.city || null);
+    let location = changed ? null : (existing.location || null);
+    let warning = null;
+    if (body.location) {
+        const located = await attachLocation(body, { address, city }, geocodeListing);
+        if (!located.ok)
+            return { status: 400, payload: { error: located.message } };
+        warning = located.warning || null;
+        if (warning && !changed) {
+            const listings = await repository.listGroup(session.groupId);
+            return {
+                status: 200,
+                payload: {
+                    ok: true,
+                    id: listingId,
+                    created: false,
+                    locationStatus: warning,
+                    message: "Geocoding failed. This listing was not changed. Retry to try again.",
+                    listings,
+                },
+            };
+        }
+        location = located.location;
+    }
+    const updated = await repository.updateImportLocation({
+        groupId: session.groupId,
+        id: listingId,
+        address,
+        city,
+        location,
+    });
+    if (!updated)
+        return { status: 404, payload: { error: "That listing is not in this group." } };
+    const listings = await repository.listGroup(session.groupId);
+    return {
+        status: 200,
+        payload: {
+            ok: true,
+            id: listingId,
+            created: false,
+            locationStatus: warning,
+            message: warning ? "Geocoding failed. The listing was saved without a resolved location. Retry to try again." : "",
+            listings,
+        },
+    };
+}
+
+async function attachLocation(body, record, geocodeListing) {
+    if (!body.location)
+        return { ok: true, location: null };
+    const query = listingGeocodeQuery(record.address, record.city);
+    if (!query)
+        return { ok: false, message: "Add an address or city before saving a resolved location, or save without one." };
+    if (typeof body.location.query === "string" && body.location.query !== query)
+        return { ok: false, message: "That location belongs to a previous address. Resolve the current address, or save without a location." };
+    if (typeof geocodeListing !== "function")
+        return { ok: true, location: null, warning: "provider_failure" };
+    let result;
+    try {
+        result = await geocodeListing(query);
+    }
+    catch {
+        return { ok: true, location: null, warning: "provider_failure" };
+    }
+    if (!result || result.status === "provider_failure")
+        return { ok: true, location: null, warning: "provider_failure" };
+    const matched = matchConfirmedPlace(result, body.location);
+    if (!matched)
+        return { ok: false, message: locationMismatchMessage(result) };
+    return { ok: true, location: { ...matched, query } };
+}
+
+function locationMismatchMessage(result) {
+    if (result?.status === "ambiguous")
+        return "Choose one matching place before saving a location, or save without one.";
+    if (result?.status === "approximate")
+        return "Confirm the approximate origin before saving it, or save without a location.";
+    if (result?.status === "not_found")
+        return "No place matched that address. Correct it or save without a location.";
+    return "That location could not be confirmed for the current address.";
 }
 
 function sanitizeRecord(fields, draft, body) {

@@ -34,6 +34,22 @@ export function toSearchListing(record) {
         unverified: true,
         sampleData: false,
         amenities: record.amenities || [],
+        coordinates: coordinatesFrom(record),
+    };
+}
+
+function coordinatesFrom(record) {
+    const location = record.location || record.fieldConfidence?.location || record.field_confidence?.location || null;
+    const lat = Number(location?.lat);
+    const lon = Number(location?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon))
+        return null;
+    return {
+        lat,
+        lon,
+        precision: location.precision || "neighborhood",
+        label: location.label || "",
+        source: location.source || "",
     };
 }
 
