@@ -27,7 +27,10 @@ describe("feedback export", () => {
         expect(exported).toEqual({
             schemaVersion: SCHEMA_VERSION,
             sampleData: true,
+            catalogMode: "sample",
             includesImportedData: false,
+            includesUserProvidedData: false,
+            includesScrapedData: false,
             liveImport: { status: "not_loaded", importedAt: null, errorCode: null },
             area: "Castro Street",
             huntingMode: "roommates",
@@ -81,6 +84,19 @@ describe("feedback export", () => {
         expect(exported.commute.destination).toBe("");
         expect(exported.commute.timezone).toBe("America/Los_Angeles");
         expect(exported.listingMetrics).toEqual([]);
+    });
+    it("omits sample references from a real-data export", () => {
+        const state = { ...emptyState(), useful: [{ id: "sunnyvale-close", note: "old sample" }, { id: "user-1", note: "kept" }] };
+        const exported = buildExport(state, new Map([["user-1", "Mine"]]), new Set(["user-1"]), {
+            catalogMode: "real",
+            listings: [{ id: "user-1", origin: "user-provided", title: "Mine", sourceUrl: "https://example.test/listing" }],
+        });
+        expect(exported.sampleData).toBe(false);
+        expect(exported.catalogMode).toBe("real");
+        expect(exported.includesUserProvidedData).toBe(true);
+        expect(exported.usefulListings).toEqual([
+            { id: "user-1", title: "Mine", note: "kept", currentlyMatching: true, origin: "user-provided", sourceUrl: "https://example.test/listing" },
+        ]);
     });
     it("does not invent a budget from an invalid entry", () => {
         const exported = buildExport({ ...emptyState(), budgetText: "0" }, new Map(), new Set());

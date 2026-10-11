@@ -71,6 +71,7 @@ export function emptyState() {
         groups: [],
         activeGroupId: null,
         activeMemberId: null,
+        realDataMode: false,
     };
 }
 export function isPriorityId(value) {

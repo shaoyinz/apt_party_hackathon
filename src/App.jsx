@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { selectCatalog } from "./catalogSelection";
 import { LISTINGS as FALLBACK_LISTINGS } from "./fixtures";
+import { REDFIN_CITY_TARGETS } from "./redfinCatalog";
 import { buildExport } from "./feedback";
 import { GroupDemo } from "./groupDemo";
 import { ImportFlow } from "./ImportFlow";
@@ -8,7 +10,7 @@ import { toSearchListing } from "./import/searchShape";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
-import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
+import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, normalizeArea, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
 import { useLocationMetrics } from "./useLocationMetrics";
 const store = probeBrowserStore();
@@ -20,6 +22,11 @@ export function App() {
     const [submitted, setSubmitted] = useState(false);
 const [catalog, setCatalog] = useState(null);
     const [catalogError, setCatalogError] = useState(null);
+    const [catalogSettled, setCatalogSettled] = useState(false);
+    const [userSettled, setUserSettled] = useState(false);
+    const [userError, setUserError] = useState(null);
+    const [redfinSettled, setRedfinSettled] = useState(false);
+    const [redfinError, setRedfinError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
     const [dataStatus, setDataStatus] = useState("loading");
@@ -51,22 +58,47 @@ let cancelled = false;
                 setCatalog(next);
         }).catch(() => {
             if (!cancelled)
-                setCatalogError("The listing import service did not respond. Sample fixtures are not live results.");
+                setCatalogError("The listing import service did not respond.");
+        }).finally(() => {
+            if (!cancelled)
+                setCatalogSettled(true);
         });
         loadSession()
             .then((next) => {
             if (cancelled)
                 return null;
             setIdentity(next);
-            return loadImports();
+            return loadImports().then((payload) => ({ payload })).catch((error) => ({ error }));
         })
-            .then((payload) => {
-            if (!cancelled && payload)
-                setUserListings((payload.listings || []).map(toSearchListing));
+            .then((result) => {
+            if (cancelled || !result)
+                return;
+            if (result.error) {
+                setUserError(result.error instanceof Error ? result.error.message : "Saved listings could not be loaded.");
+                return;
+            }
+            setUserError(null);
+            setUserListings((result.payload.listings || []).map(toSearchListing));
         })
             .catch(() => {
             if (!cancelled)
                 setUserListings([]);
+        })
+            .finally(() => {
+            if (!cancelled)
+                setUserSettled(true);
+        });
+        loadScrapedCities().then((listings) => {
+            if (cancelled)
+                return;
+            setRedfinListings(listings);
+            setRedfinError(null);
+        }).catch(() => {
+            if (!cancelled)
+                setRedfinError("Scraped listing catalogs could not be checked.");
+        }).finally(() => {
+            if (!cancelled)
+                setRedfinSettled(true);
         });
         return () => {
             cancelled = true;
@@ -103,11 +135,15 @@ useEffect(() => {
             .then((response) => response.ok ? response.json() : Promise.reject())
             .then((body) => {
             if (!active) return;
-            setRedfinListings(body.listings || []);
+            setRedfinListings((current) => replaceCityListings(current, city, body.listings || []));
             setRedfinNote(body.message || "");
+            setRedfinError(null);
         })
             .catch(() => {
-            if (active) setRedfinNote(`No cached Redfin listings for ${city}. Other cities were not substituted.`);
+            if (!active)
+                return;
+            setRedfinError(`Scraped listings for ${city || "this city"} could not be refreshed.`);
+            setRedfinNote(`No new scraped listings for ${city}. Other cities were not substituted.`);
         });
         return () => {
             active = false;
@@ -117,14 +153,31 @@ useEffect(() => {
 
     const budget = parsedBudget.ok ? parsedBudget.budget : null;
 const imported = catalog?.listings ?? [];
-    const listings = useMemo(() => {
+    const sourceError = [catalogError, userError, redfinError].filter(Boolean).join(" ") || null;
+    const selection = useMemo(() => {
         const coordinatesById = new Map(FALLBACK_LISTINGS.map((listing) => [listing.id, listing.coordinates ?? null]));
-        const demo = demoListings.map((listing) => ({
-            ...listing,
-            coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
-        }));
-        return [...demo, ...imported, ...userListings];
-    }, [demoListings, imported, userListings]);
+        return selectCatalog({
+            samples: demoListings.map((listing) => ({
+                ...listing,
+                coordinates: listing.coordinates ?? coordinatesById.get(listing.id) ?? null,
+            })),
+            imported,
+            userProvided: userListings,
+            scraped: redfinListings,
+            sourcesSettled: catalogSettled && userSettled && redfinSettled,
+            sourceError,
+            realModeReached: state.realDataMode,
+        });
+    }, [catalogSettled, demoListings, imported, redfinError, redfinListings, redfinSettled, sourceError, state.realDataMode, userError, userListings, userSettled]);
+    const listings = selection.listings;
+    useEffect(() => {
+        if (selection.mode !== "real")
+            return;
+        setState((current) => current.realDataMode ? current : { ...current, realDataMode: true });
+    }, [selection.mode]);
+    useEffect(() => {
+        document.title = selection.mode === "sample" ? "Roost — sample housing search" : selection.mode === "real" ? "Roost — real listings" : "Roost — checking listings";
+    }, [selection.mode]);
     const location = useLocationMetrics(state, setState, state.view === "results", listings);
     const outcome = useMemo(() => rankListings(listings, state.area, budget, state.priorities, {
         mode: state.mode,
@@ -137,6 +190,7 @@ const imported = catalog?.listings ?? [];
     const exported = useMemo(() => buildExport(state, titles, matchingIds, {
         listings,
         resolutionStatus: location.geocode.status,
+        catalogMode: selection.mode,
         liveImport: {
             status: catalogError ? "unavailable" : catalog ? catalogStatus(catalog) : "loading",
             importedAt: catalog?.importedAt ?? null,
@@ -151,8 +205,8 @@ const imported = catalog?.listings ?? [];
             convenience: location.amenities.byId[listing.id] ?? { status: "not_calculated" },
             sources: { commute: location.commute.source, convenience: location.amenities.source },
         })),
-    }), [catalog, catalogError, listings, location, matchingIds, state, titles]);
-    const outside = state.useful.filter((item) => !matchingIds.has(item.id));
+    }), [catalog, catalogError, listings, location, matchingIds, selection.mode, state, titles]);
+    const outside = state.useful.filter((item) => !matchingIds.has(item.id) && titles.has(item.id));
     function update(patch) {
         setState((current) => ({ ...current, ...patch }));
     }
@@ -197,7 +251,7 @@ const imported = catalog?.listings ?? [];
             setCatalog(await loadCatalog(true));
         }
         catch {
-            setCatalogError("Refresh failed before a catalog response. Saved listings were not replaced with sample data.");
+            setCatalogError("Refresh failed before a catalog response. The last saved real catalog was kept.");
         }
         finally {
             setRefreshing(false);
@@ -207,8 +261,11 @@ const imported = catalog?.listings ?? [];
         setIdentity(next);
         setPageError("");
         return loadImports()
-            .then((payload) => setUserListings((payload.listings || []).map(toSearchListing)))
-            .catch(() => setUserListings([]));
+            .then((payload) => {
+            setUserError(null);
+            setUserListings((payload.listings || []).map(toSearchListing));
+        })
+            .catch((error) => setUserError(error instanceof Error ? error.message : "Saved listings could not be loaded."));
     }
     function reset() {
         if (!window.confirm("Reset this browser's saved search, group demo, useful listings, and feedback?"))
@@ -232,28 +289,29 @@ const imported = catalog?.listings ?? [];
     const groupView = route.kind !== "search";
     return (<div className={groupView ? "page wide" : "page"}>
       <header className="mast">
-        <p className="stamp">{catalog && imported.length > 0 ? "Imported + sample" : "Sample data"}</p>
+        <p className="stamp" data-catalog-mode={selection.mode}>{selection.mode === "sample" ? "Sample data" : selection.label}</p>
         <div>
           <p className="eyebrow">South Bay scratch prototype</p>
           <h1>Roost</h1>
         </div>
         <a className="btn" href="#/groups">Groups</a>
       </header>
-      {groupView ? null : <p className="local-note" role="status">
-         {dataStatus === "database"
-         ? "Displaying synthetic sample listings loaded from Supabase."
-          : dataStatus === "loading"
-            ? "Loading Supabase demo listings."
-            : "Supabase unavailable; using local sample fixtures."}
+      {groupView ? null : <p className="local-note" id="data-source-status" role="status">
+         {selection.mode === "sample" && dataStatus === "database"
+         ? "Sample fixtures loaded from the demo database. They are not live offers."
+          : selection.mode === "sample" && dataStatus === "loading"
+            ? "Sample fixtures for the initial demo. Demo-database fixtures are still loading and are not live offers."
+            : selection.detail}
       </p>}
       <p className="banner" role="note">
-        {importBanner(catalog, catalogError, refreshing)} Calculating commute or convenience sends
+        {importBanner(catalog, catalogError, refreshing, selection.mode)} Calculating commute or convenience sends
         destination and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity
         services. Transit times are scheduled estimates, not live delays or fares. Nothing is sent
         to the team unless you share an export yourself.
       </p>
       {groupView ? null : <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>}
       {groupView ? null : <ImportFlow identity={identity} onSaved={(rows) => {
+            setUserError(null);
             setUserListings((rows || []).map(toSearchListing));
         }}/>}
       {groupView ? null : <SavedPage identity={identity} error={pageError} onCreate={(name) => {
@@ -268,8 +326,8 @@ const imported = catalog?.listings ?? [];
         </p>) : (<p className="local-note">Search inputs stay in this browser. Commute calculations use external location services.</p>))}
 
       {groupView ? <div className="demo-app" data-theme={state.theme === "dark" ? "dark" : "light"}>
-        <GroupDemo state={state} warning={warning} route={route} listings={listings} onPatch={update} onReplaceGroup={replaceGroup} onReset={reset}/>
-      </div> : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} redfinListings={redfinListings} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
+        <GroupDemo state={state} warning={warning} route={route} listings={listings} catalogMode={selection.mode} onPatch={update} onReplaceGroup={replaceGroup} onReset={reset}/>
+      </div> : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} redfinListings={redfinListings} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} catalogMode={selection.mode} sourceDetail={selection.detail} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
 
       {groupView ? null : <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>}
       <p className="attribution">
@@ -510,10 +568,12 @@ function DestinationField({ value, onChange, onSelect }) {
       {note ? <p className="error" role="status">{note}</p> : null}
     </div>);
 }
-function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, redfinListings, redfinNote, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, }) {
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, redfinListings, redfinNote, budget, outside, titles, listings, catalog, catalogError, catalogMode, sourceDetail, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, }) {
     const parsed = parseBudget(state.budgetText);
     const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
     const liveFailed = Boolean(catalogError || catalog?.errorCode);
+    const citySales = (redfinListings || []).filter((listing) => isForSaleListing(listing) && normalizeArea(listing.city) === normalizeArea(state.area));
+    const pending = catalogMode === "loading" || catalogMode === "unavailable";
     return (<section className="panel" aria-labelledby="results-heading">
       <div className="results-head">
         <h2 id="results-heading">Matches</h2>
@@ -551,22 +611,21 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
       </p>
       <CommuteFields state={state} onDestination={onDestination} onSelectPlace={onSelectPlace} onTravelMode={onTravelMode} onDeparture={onDeparture}/>
       <LocationStatus location={location}/>
-      {liveFailed ? <p className="warning" role="status">Live import did not succeed. Matching sample cards below are fixtures, not a substitute feed.</p> : null}
-      {state.priorities.length === 0 ? (<div className="empty" role="status">
-          <p>Choose at least one priority before Roost ranks sample listings.</p>
+      {liveFailed ? <p className="warning" role="status">{catalogMode === "sample" ? "Live import did not succeed. Matching cards below are labeled sample fixtures, not a substitute feed." : sourceDetail}</p> : null}
+      {pending ? (<div className="empty" role="status"><p>{sourceDetail}</p></div>) : state.priorities.length === 0 ? (<div className="empty" role="status">
+          <p>Choose at least one priority before Roost ranks listings.</p>
           <button type="button" className="primary" onClick={onEdit}>
             Back to priorities
           </button>
         </div>) : !areaKnown ? (<div className="empty" role="status">
-          <p>No listings for “{state.area.trim()}”. Roost will not substitute a different area or the search source name.</p>
+          <p>No listings for “{state.area.trim()}”. Roost will not substitute a different area, sample cards, or the search source name.</p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit area
           </button>
         </div>) : outcomeEligible.length === 0 ? (<div className="empty" role="status">
           <p>
-            No listings in this area
-            {budget != null ? ` are at or under ${formatMoney(budget)} applicable monthly rent` : ""}. Unknown,
-            ambiguous, weekly, and roommate-household room rents are not treated as a passing total.
+            {catalogMode === "sample" ? "No sample listings in this area match." : "No rental listings in this area match."}
+            {budget != null ? ` None are at or under ${formatMoney(budget)} applicable monthly rent.` : ""} For-sale prices are not monthly rent. {catalogMode === "sample" ? "Sample cards stay labeled." : "Sample fixtures were not added."}
           </p>
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
@@ -586,8 +645,8 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
         <h3 id="redfin-for-sale">Redfin for sale</h3>
         <p className="help">Cached for-sale listings for {state.area.trim() || "this city"} only. These prices are not monthly rent and are not sample fixtures.</p>
         {redfinNote ? <p className="help">{redfinNote}</p> : null}
-        {(redfinListings || []).filter((listing) => listing.listingType !== "rental").length === 0 ? (<p className="empty" role="status">No cached Redfin for-sale listings for {state.area.trim() || "this city"}.</p>) : (<ul>
-          {(redfinListings || []).filter((listing) => listing.listingType !== "rental").map((listing) => (<li key={listing.id}>
+        {citySales.length === 0 ? (<p className="empty" role="status">No cached Redfin for-sale listings for {state.area.trim() || "this city"}.</p>) : (<ul>
+          {citySales.map((listing) => (<li key={listing.id}>
             <p><strong>{listing.title}</strong> <span className="status">For sale</span></p>
             <p>{listing.salePriceText || "Price unknown"} · {listing.roomLabel}</p>
             {listing.sourceUrl ? <p><a href={listing.sourceUrl} target="_blank" rel="noreferrer">View on Redfin</a></p> : null}
@@ -681,7 +740,7 @@ function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPh
         </div>
         <div>
           <dt>Origin</dt>
-          <dd>{listing.coordinates ? "Approximate sample origin. Not a verified street address." : "Missing coordinates. Commute and convenience are unavailable."}</dd>
+          <dd>{listing.coordinates ? (listingOrigin(listing) === "sample" ? "Approximate sample origin. Not a verified street address." : "Approximate coordinates from the listing source. Not a verified street address.") : "Missing coordinates. Commute and convenience are unavailable."}</dd>
         </div>
       </dl>
       <MetricBlock title="Commute" metric={commute} phase={commutePhase} onRetry={onRetry} commute/>
@@ -769,7 +828,7 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
         <div>
           <dt>Schema</dt>
           <dd>
-            v{exported.schemaVersion}, {exported.includesImportedData ? "sample and imported data" : "sample data"}
+            v{exported.schemaVersion}, {exported.sampleData ? "sample data" : exported.catalogMode === "real" ? "real listings only" : exported.catalogMode}
           </dd>
         </div>
         <div>
@@ -833,7 +892,7 @@ function FeedbackPanel({ state, exported, onFeedback, onReset, showReset, }) {
 function ImportPanel({ catalog, catalogError, refreshing, onRefresh }) {
     return (<section className="panel" aria-labelledby="import-heading">
       <h2 id="import-heading">Craigslist import</h2>
-      <p className="help">The server reads configured Craigslist search URLs. A failed refresh keeps the last successful import. Sample fixtures stay labeled and are not used to fill a failed import.</p>
+      <p className="help">The server reads configured Craigslist search URLs. A failed refresh keeps the last successful import and does not fill the catalog with sample fixtures.</p>
       {catalogError ? <p className="warning" role="alert">{catalogError}</p> : null}
       {!catalog && !catalogError ? <p role="status">Loading import status.</p> : null}
       {catalog?.error ? <p className="warning" role="status">{catalog.error}{catalog.stale && catalog.importedAt ? ` Last successful import ${formatTimestamp(catalog.importedAt)}.` : ""}</p> : null}
@@ -853,18 +912,46 @@ function catalogStatus(catalog) {
         return "ok";
     return "not_imported";
 }
-function importBanner(catalog, catalogError, refreshing) {
+function importBanner(catalog, catalogError, refreshing, catalogMode) {
     if (refreshing)
         return "Refreshing configured Craigslist searches. This does not replace saved listings until the fetch finishes.";
     if (catalogError)
         return catalogError;
     if (!catalog)
-        return "Checking the Craigslist import status. Sample fixtures are labeled and are not a live feed.";
+        return "Checking the Craigslist import status. Sample fixtures are not shown as the resolved result.";
     if (catalog.error)
-        return catalog.error;
+        return `${catalog.error}${catalog.stale ? " Cached listings are stale." : ""}`;
     if (catalog.listings.length > 0)
-        return "Imported posts are unverified Craigslist offers. Sample fixtures remain labeled separately.";
+        return "Imported posts are unverified Craigslist offers. Sample fixtures are not mixed in.";
+    if (catalogMode === "real" || catalogMode === "unavailable")
+        return "No imported offers are cached. Sample fixtures were not added.";
     return "No imported offers are cached yet. Sample fixtures are labeled and are not live availability.";
+}
+function isForSaleListing(listing) {
+    return listing.rentBasis === "for-sale" || listing.listingType === "for-sale" || listing.listingType === "sale";
+}
+function replaceCityListings(current, city, incoming) {
+    const wanted = normalizeArea(city);
+    return [...current.filter((listing) => normalizeArea(listing.city) !== wanted), ...incoming];
+}
+async function loadScrapedCities() {
+    const bodies = await Promise.all(REDFIN_CITY_TARGETS.map(async (target) => {
+        const response = await fetch(`/api/redfin-listings?city=${encodeURIComponent(target.city)}`, { headers: { accept: "application/json" } });
+        if (!response.ok)
+            throw new Error("Scraped listing catalog did not respond.");
+        return response.json();
+    }));
+    const seen = new Set();
+    const listings = [];
+    for (const body of bodies) {
+        for (const listing of body.listings || []) {
+            if (seen.has(listing.id))
+                continue;
+            seen.add(listing.id);
+            listings.push(listing);
+        }
+    }
+    return listings;
 }
 function formatTimestamp(value) {
     const parsed = Date.parse(value);

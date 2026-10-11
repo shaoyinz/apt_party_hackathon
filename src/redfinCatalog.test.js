@@ -30,8 +30,8 @@ describe("Redfin search cache", () => {
             property_url: "https://www.redfin.com/NY/New-York/112-E-35th-St-10016/home/45333496",
         })];
         const open = rankListings(listings, "New York", null, ["price"]);
-        expect(open.eligible).toHaveLength(1);
-        expect(open.eligible[0].listing.rent).toBeNull();
+        expect(open.areaKnown).toBe(true);
+        expect(open.eligible).toEqual([]);
         const capped = rankListings(listings, "New York", 3000, ["price"]);
         expect(capped.eligible).toEqual([]);
         expect(capped.excludedUnknownRent).toBe(0);
