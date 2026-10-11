@@ -142,6 +142,7 @@ export function listingsPlugin(root) {
 
   return {
     name: "roost-listings",
+    middleware,
     configureServer(server) {
       server.middlewares.use(middleware);
       startRedfinScheduler(root);

@@ -165,3 +165,5 @@ Override names are listed in `.env.example`. Do not commit endpoint credentials 
 ## Checks
 
 Party runs the argv commands in `.party/checks.json` from this directory: dependency install, tests, and production build. The wrapper sends npm's cache to `XDG_CACHE_HOME` when that variable is set. Build artifacts go to `PARTY_OUTPUT_DIR` when set.
+
+Production serving and Railway release steps are in [docs/railway.md](docs/railway.md). `npm start` serves the production build and API routes; it is not the Vite dev server.
