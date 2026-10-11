@@ -9,6 +9,7 @@ Users import one listing from screenshots, a public listing link, or manual entr
 3. Extract, or enter facts manually. Nothing is written to `listings` before **Save listing**.
 4. Correct blanks and conflicts. Ambiguous dates and nonmonthly prices stay unknown unless you type a monthly value.
 5. Confirm, then save. A retry of the same save reuses one listing id.
+6. The review step geocodes the address and city. A unique street match is shown before save. Ambiguous matches need a choice. A city or neighborhood center is labeled approximate and is not stored as an exact property location unless you confirm that origin. Geocoding failure still allows save, with commute and convenience unavailable. Saved listings can correct the address and retry in place.
 
 Saved cards are labeled **User-provided, unverified** and say whether they came from a link or screenshots. They join area and budget ranking. Room rent is not treated as whole-unit rent. Once a saved or scraped listing is available, sample fixtures are excluded instead of mixed in.
 
@@ -23,7 +24,7 @@ Connection variable names, never values:
 
 `source` is `upload` for screenshot-only imports and `link` when a valid listing URL led the import, including screenshot or manual fallback. `source_url` stores that URL. `status` is `New`. `image_urls` are same-origin API paths. `raw_text` keeps extracted text. `field_confidence` stores the idempotency key, confirmed city and neighborhood, and conflict notes. It does not invent numeric confidence, ratings, or commute times. Extra amenities go to `listing_attributes` with `verified=false`.
 
-City and neighborhood are not columns on `listings`. Confirmed values are kept in `field_confidence` so search can reload them. The server does not geocode.
+City, neighborhood, and a confirmed location are not separate coordinate columns. Confirmed values are kept in `field_confidence`, including `location` with coordinates, label, `OpenStreetMap via Nominatim`, precision (`address`, `neighborhood`, or `city`), and the query. The server rechecks that query before storing it. An address change clears the old location until a new match is confirmed.
 
 If `DATABASE_URL` and `PGHOST` are unset, extract can still build a draft, and save returns an error without inserting a listing.
 

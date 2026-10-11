@@ -5,11 +5,13 @@ import { REDFIN_CITY_TARGETS } from "./redfinCatalog";
 import { buildExport } from "./feedback";
 import { GroupDemo } from "./groupDemo";
 import { ImportFlow } from "./ImportFlow";
+import { SavedLocationList } from "./ListingLocation";
 import { createSavedPage, joinSavedPage, loadImports, loadSession } from "./importApi";
 import { toSearchListing } from "./import/searchShape";
 import { rankListings } from "./matching";
 import { postLocation } from "./location/api";
 import { AMENITY_LABELS } from "./location/score";
+import { originDisclosure } from "./location/listingGeo";
 import { AREA_SUGGESTIONS, LEASE_FLEX_MAX_MONTHS, PACIFIC_TZ, PRIORITY_IDS, PRIORITY_LABELS, TRAVEL_LABELS, TRAVEL_MODES, emptyState, formatMoney, leaseFact, listingOrigin, normalizeArea, offerKindLabel, parseBudget, rentFact, validateSearch, yesNoUnknown } from "./model";
 import { clearState, loadState, probeBrowserStore, saveState } from "./storage";
 import { useLocationMetrics } from "./useLocationMetrics";
@@ -305,12 +307,16 @@ const imported = catalog?.listings ?? [];
       </p>}
       <p className="banner" role="note">
         {importBanner(catalog, catalogError, refreshing, selection.mode)} Calculating commute or convenience sends
-        destination and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity
+        destination, listing addresses, and listing coordinates to OpenStreetMap-based geocoding, routing, and amenity
         services. Transit times are scheduled estimates, not live delays or fares. Nothing is sent
         to the team unless you share an export yourself.
       </p>
       {groupView ? null : <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>}
       {groupView ? null : <ImportFlow identity={identity} onSaved={(rows) => {
+            setUserError(null);
+            setUserListings((rows || []).map(toSearchListing));
+        }}/>}
+      {groupView ? null : <SavedLocationList listings={userListings} onUpdated={(rows) => {
             setUserError(null);
             setUserListings((rows || []).map(toSearchListing));
         }}/>}
@@ -740,9 +746,10 @@ function ListingCard({ item, rank, commute, convenience, commutePhase, amenityPh
         </div>
         <div>
           <dt>Origin</dt>
-          <dd>{listing.coordinates ? (listingOrigin(listing) === "sample" ? "Approximate sample origin. Not a verified street address." : "Approximate coordinates from the listing source. Not a verified street address.") : "Missing coordinates. Commute and convenience are unavailable."}</dd>
+          <dd>{originDisclosure(listing.coordinates, listingOrigin(listing))}</dd>
         </div>
       </dl>
+      {listing.coordinates && listing.coordinates.precision !== "address" && listingOrigin(listing) !== "sample" ? <p className="warning">Estimates use this approximate origin, not a verified property location.</p> : null}
       <MetricBlock title="Commute" metric={commute} phase={commutePhase} onRetry={onRetry} commute/>
       <ConvenienceBlock metric={convenience} phase={amenityPhase} onRetry={onRetry}/>
       <Explanation title="Matched priorities" items={item.matches} empty="No selected priority is a clear match."/>

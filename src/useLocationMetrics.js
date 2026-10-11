@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { postLocation } from "./location/api";
 import { commuteSignature, createRequestGate, rankingMetrics } from "./location/requests";
 import { parsePacificLocal } from "./location/time";
-const MISSING = "This sample listing has no coordinates, so the result is unavailable.";
+function missingMessage(listing) {
+    if (listing.origin === "user-provided")
+        return "This saved listing has no confirmed location, so commute and convenience are unavailable.";
+    return "This listing has no coordinates, so the result is unavailable.";
+}
 export function useLocationMetrics(state, setState, active, listings) {
     const gate = useRef(createRequestGate());
     const [geocode, setGeocode] = useState({ status: "idle", place: null, candidates: [], message: "" });
@@ -20,14 +24,14 @@ export function useLocationMetrics(state, setState, active, listings) {
             return undefined;
         const id = gate.current.next("amenities");
         let cancelled = false;
-        setAmenities((current) => ({ ...current, status: "loading" }));
+        setAmenities({ status: "loading", byId: {}, source: "" });
         postLocation("/api/location/amenities", { origins }).then((result) => {
             if (cancelled || !gate.current.isCurrent("amenities", id))
                 return;
             const byId = { ...(result.results ?? {}) };
             for (const listing of listings) {
                 if (!hasCoordinates(listing))
-                    byId[listing.id] = { status: "missing_location", message: MISSING };
+                    byId[listing.id] = { status: "missing_location", message: missingMessage(listing) };
                 else if (!byId[listing.id])
                     byId[listing.id] = { status: "provider_failure", message: result.message || "Amenity data is unavailable. This is not a zero score." };
             }
@@ -96,7 +100,7 @@ export function useLocationMetrics(state, setState, active, listings) {
             const byId = { ...(result.results ?? {}) };
             for (const listing of listings) {
                 if (!hasCoordinates(listing))
-                    byId[listing.id] = { status: "missing_location", message: MISSING };
+                    byId[listing.id] = { status: "missing_location", message: missingMessage(listing) };
                 else if (!byId[listing.id])
                     byId[listing.id] = { status: result.status || "provider_failure", message: result.message || "The location service failed. Retry to try again." };
             }
@@ -130,6 +134,6 @@ function missingRoutes(listings, message, status = "not_found") {
         listing.id,
         hasCoordinates(listing)
             ? { status, message }
-            : { status: "missing_location", message: MISSING },
+            : { status: "missing_location", message: missingMessage(listing) },
     ]));
 }
