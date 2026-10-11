@@ -55,4 +55,4 @@ Application rollback is a new deploy of a known-good commit, or Railway's previo
 
 ## Checks after deploy
 
-`scripts/verify-deploy.mjs` waits for `/`, `/api/health` with OCR available, `/api/listings`, and `POST /api/location/suggest`. A failed check prints the response body and fails the workflow.
+`scripts/verify-deploy.mjs` waits for `/`, `/api/health` with OCR available, a successful `/api/listings` JSON response, and `POST /api/location/suggest`. Only the health payload is checked for OCR. A failed check prints the response body and fails the workflow.

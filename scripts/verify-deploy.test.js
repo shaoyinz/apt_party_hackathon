@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureMessage } from "./verify-deploy.mjs";
+import { assertJsonBody, failureMessage } from "./verify-deploy.mjs";
 
 describe("verify-deploy failure output", () => {
     it("includes the health response body", () => {
@@ -9,5 +9,10 @@ describe("verify-deploy failure output", () => {
 
     it("keeps a status-only message when the body is empty", () => {
         expect(failureMessage("/api/health", 503, "  ")).toBe("/api/health returned 503");
+    });
+
+    it("requires OCR only on the health payload", () => {
+        expect(() => assertJsonBody("/api/listings", { listings: [] })).not.toThrow();
+        expect(() => assertJsonBody("/api/health", { ocr: "unavailable" })).toThrow("OCR is unavailable");
     });
 });

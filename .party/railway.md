@@ -6,3 +6,4 @@ Verified 2026-10-10 with the project token (`RAILWAY_TOKEN` / `SECRET_RAILWAY_TO
 - `railway whoami` and `railway link` return unauthorized for this token. `railway add --database postgres` cannot run until the project is linked.
 - Service `roost` (`dd181a3d-c3e6-4b32-a943-029573fe3509`) and volume `roost-volume` mounted at `/data` were created through the GraphQL API. Public domain: `roost-production-c7d0.up.railway.app`.
 - No database service existed. Do not apply `supabase/001_demo_listings.sql` or `supabase/002_redfin_listings.sql` to an empty database. Apply only `supabase/002_zillow_sale_cache.sql` when `DATABASE_URL` or `PGHOST` is set.
+- Deploy verification must not require an `ocr` field on `/api/listings`. That JSON has no OCR status, so treating every JSON body as health made `checks` pass and `deploy` fail with `OCR is unavailable` even when Railway marked the release successful.
