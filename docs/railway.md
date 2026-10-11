@@ -26,7 +26,7 @@ Set these on the Railway service. Never commit values.
 
 - `RAILWAY_TOKEN` — GitHub Actions secret only. It is a project token for the production environment. It is not a frontend variable.
 - `ROOST_DATA_DIR` — `/data` in production, the volume mount for uploaded listing images.
-- `ROOST_STRICT_HEALTH` — `true` in the image. `/api/health` returns 503 when OCR is unavailable, or when `DATABASE_URL` is set and the database ping fails.
+- `ROOST_STRICT_HEALTH` — `true` in the image. `/api/health` returns 503 when OCR is unavailable, or when `DATABASE_URL` is set and the database ping fails. The body includes `ocrReason` when OCR is unavailable. The image installs `libgl1`, `libglib2.0-0`, and the X11 libraries that `opencv-python` needs on Debian slim.
 - `DATABASE_URL` or `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`
 - `DB_SCHEMA`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `ROOST_PYTHON`, `PORT` (Railway sets `PORT`)
@@ -55,4 +55,4 @@ Application rollback is a new deploy of a known-good commit, or Railway's previo
 
 ## Checks after deploy
 
-`scripts/verify-deploy.mjs` waits for `/`, `/api/health` with OCR available, `/api/listings`, and `POST /api/location/suggest`. A failed check fails the workflow.
+`scripts/verify-deploy.mjs` waits for `/`, `/api/health` with OCR available, `/api/listings`, and `POST /api/location/suggest`. A failed check prints the response body and fails the workflow.

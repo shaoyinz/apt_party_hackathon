@@ -113,7 +113,7 @@ export function createHandler(options) {
 }
 
 async function health(options) {
-    const ocr = options.ocrStatus ? await options.ocrStatus() : { available: false };
+    const ocr = options.ocrStatus ? await options.ocrStatus() : { available: false, reason: "OCR is unavailable." };
     let database = "unavailable";
     let databaseReason = "No database repository is configured.";
     if (options.repository?.ping) {
@@ -135,11 +135,16 @@ async function health(options) {
         database,
         databaseReason,
         ocr: ocr.available ? "available" : "unavailable",
+        ocrReason: ocr.available ? null : clipReason(ocr.reason),
         testResolver: options.testResolver === true,
         authPolicies: "pending",
         uploadLimits: UPLOAD_LIMIT_LABEL,
         fetchLimits: FETCH_LIMIT_LABEL,
     };
+}
+
+function clipReason(value) {
+    return String(value || "OCR is unavailable.").replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
 async function openSession(res, options, sessions, secret, label) {
