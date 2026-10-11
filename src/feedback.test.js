@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildExport } from "./feedback";
+import { LISTINGS, SAMPLE_SOURCE_URL } from "./fixtures";
 import { emptyState, SCHEMA_VERSION } from "./model";
 describe("feedback export", () => {
+    it("gives every sample fixture the shared sample source", () => {
+        expect(LISTINGS.length).toBeGreaterThan(0);
+        expect(LISTINGS.every((listing) => listing.sourceUrl === SAMPLE_SOURCE_URL)).toBe(true);
+    });
     it("includes current inputs, ordered priorities, notes, and sample designation", () => {
         const state = {
             ...emptyState(),
@@ -13,7 +18,7 @@ describe("feedback export", () => {
             useful: [{ id: "mv-castro", note: "Close to the demo station" }],
             generalFeedback: "Need in-unit laundry",
         };
-        const exported = buildExport(state, new Map([["mv-castro", "Castro walk-up"]]), new Set(["mv-castro"]));
+        const exported = buildExport(state, new Map([["mv-castro", "Castro walk-up"]]), new Set(["mv-castro"]), { listings: LISTINGS });
         expect(exported).toEqual({
             schemaVersion: SCHEMA_VERSION,
             sampleData: true,
@@ -31,7 +36,7 @@ describe("feedback export", () => {
                     note: "Close to the demo station",
                     currentlyMatching: true,
                     origin: "sample",
-                    sourceUrl: null,
+                    sourceUrl: SAMPLE_SOURCE_URL,
                 },
             ],
             generalFeedback: "Need in-unit laundry",
@@ -43,7 +48,7 @@ describe("feedback export", () => {
             area: "Cupertino",
             useful: [{ id: "sunnyvale-thrift", note: "" }],
         };
-        const exported = buildExport(state, new Map([["sunnyvale-thrift", "Maple Court 1BR"]]), new Set());
+        const exported = buildExport(state, new Map([["sunnyvale-thrift", "Maple Court 1BR"]]), new Set(), { listings: LISTINGS });
         expect(exported.generalFeedback).toBe("");
         expect(exported.totalMonthlyBudget).toBeNull();
         expect(exported.householdSize).toBeNull();
@@ -54,7 +59,7 @@ describe("feedback export", () => {
                 note: "",
                 currentlyMatching: false,
                 origin: "sample",
-                sourceUrl: null,
+                sourceUrl: SAMPLE_SOURCE_URL,
             },
         ]);
         expect(exported.sampleData).toBe(true);

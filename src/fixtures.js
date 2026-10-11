@@ -1,4 +1,6 @@
-export const LISTINGS = [
+export const SAMPLE_SOURCE_URL = "https://sfbay.craigslist.org/search/sby/apa";
+
+const SAMPLE_LISTINGS = [
     {
         id: "sunnyvale-thrift",
         title: "Maple Court 1BR",
@@ -180,3 +182,8 @@ export const LISTINGS = [
         commuteMinutes: 40,
     },
 ];
+
+export const LISTINGS = SAMPLE_LISTINGS.map((listing) => ({
+    ...listing,
+    sourceUrl: SAMPLE_SOURCE_URL,
+}));
