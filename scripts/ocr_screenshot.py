@@ -21,8 +21,15 @@ def main(argv):
     if len(argv) == 2 and argv[1] == "--check":
         try:
             import rapidocr_onnxruntime  # noqa: F401
-        except Exception:
-            return unavailable()
+        except Exception as error:
+            detail = str(error).replace("\n", " ").strip()[:240]
+            if not detail:
+                return unavailable()
+            return emit({
+                "ok": False,
+                "code": "ocr_unavailable",
+                "message": f"Python OCR failed to load: {detail}",
+            }, 1)
         return emit({"ok": True, "engine": "rapidocr-onnxruntime"})
     if len(argv) != 2:
         return emit({"ok": False, "code": "ocr_failed", "message": "Usage: ocr_screenshot.py <image>"}, 2)

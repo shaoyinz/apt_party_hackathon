@@ -21,10 +21,14 @@ export async function ocrStatus() {
     try {
         const result = await execFileAsync(pythonBin(), [scriptPath, "--check"], { timeout: 15000 });
         const payload = JSON.parse(result.stdout);
-        return { available: payload.ok === true, engine: payload.engine || "python" };
+        return {
+            available: payload.ok === true,
+            engine: payload.engine || "python",
+            reason: payload.ok === true ? null : clip(payload.message || "OCR check failed."),
+        };
     }
-    catch {
-        return { available: false, engine: "python" };
+    catch (error) {
+        return { available: false, engine: "python", reason: ocrFailureReason(error) };
     }
 }
 
@@ -47,4 +51,23 @@ export async function readImageText(filePath) {
 function lastJson(stdout) {
     const lines = String(stdout || "").trim().split("\n").filter(Boolean);
     return lines[lines.length - 1] || "{}";
+}
+
+function ocrFailureReason(error) {
+    const stdout = String(error?.stdout || "");
+    let payload = {};
+    try {
+        payload = JSON.parse(lastJson(stdout));
+    }
+    catch {
+        payload = {};
+    }
+    if (payload.message)
+        return clip(payload.message);
+    const stderr = String(error?.stderr || "").trim().split("\n").filter(Boolean).pop();
+    return clip(stderr || "OCR check failed.");
+}
+
+function clip(text) {
+    return String(text || "OCR check failed.").replace(/\s+/g, " ").trim().slice(0, 240);
 }

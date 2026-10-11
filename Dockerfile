@@ -2,6 +2,7 @@ FROM node:22-bookworm-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates curl \
+    libgl1 libglib2.0-0 libsm6 libice6 libxext6 libx11-6 libxcb1 zlib1g \
   && rm -rf /var/lib/apt/lists/* \
   && curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHandler } from "./handler.js";
 import { createMemoryRepository } from "./memoryRepository.js";
 
@@ -152,7 +152,56 @@ describe("import handler", () => {
     });
 });
 
-async function testHandler(repository, fetchPage) {
+describe("strict health", () => {
+    const saved = {};
+
+    beforeEach(() => {
+        saved.strict = process.env.ROOST_STRICT_HEALTH;
+        saved.database = process.env.DATABASE_URL;
+        saved.host = process.env.PGHOST;
+        delete process.env.DATABASE_URL;
+        delete process.env.PGHOST;
+        process.env.ROOST_STRICT_HEALTH = "true";
+    });
+
+    afterEach(() => {
+        restoreEnv("ROOST_STRICT_HEALTH", saved.strict);
+        restoreEnv("DATABASE_URL", saved.database);
+        restoreEnv("PGHOST", saved.host);
+    });
+
+    it("returns 503 with an OCR reason when OCR is unavailable and no database is configured", async () => {
+        const handler = createHandler({
+            repository: null,
+            ocrStatus: async () => ({ available: false, reason: "libGL.so.1: cannot open shared object file" }),
+        });
+        const health = await call(handler, "GET", "/api/health");
+        expect(health.status).toBe(503);
+        expect(health.body.ocr).toBe("unavailable");
+        expect(health.body.ocrReason).toBe("libGL.so.1: cannot open shared object file");
+        expect(health.body.databaseReason).toBe("No database repository is configured.");
+    });
+
+    it("returns 200 when OCR is available and no database is configured", async () => {
+        const handler = createHandler({
+            repository: null,
+            ocrStatus: async () => ({ available: true }),
+        });
+        const health = await call(handler, "GET", "/api/health");
+        expect(health.status).toBe(200);
+        expect(health.body.ocr).toBe("available");
+        expect(health.body.ocrReason).toBeNull();
+    });
+});
+
+function restoreEnv(name, value) {
+    if (value === undefined)
+        delete process.env[name];
+    else
+        process.env[name] = value;
+}
+
+async function testHandler(repository, fetchPage, ocrStatus) {
     root = await mkdtemp(path.join(tmpdir(), "roost-import-"));
     return createHandler({
         repository,
@@ -165,7 +214,7 @@ async function testHandler(repository, fetchPage) {
             contentType: "text/html",
             body: "<title>Olive import</title><p>18 Olive Ave, Sunnyvale, CA. Entire apartment. $2,400/month. 1 bed. 1 bath. Available March 1, 2026.</p>",
         })),
-        ocrStatus: async () => ({ available: false }),
+        ocrStatus: ocrStatus || (async () => ({ available: false })),
     });
 }
 
