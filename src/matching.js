@@ -1,4 +1,7 @@
 import { COMMUTE_SCALE_MINUTES, LEASE_FLEX_MAX_MONTHS, PRICE_CEILING, PRICE_SPAN, SPACE_SQFT_SCALE, TRAVEL_LABELS, applicableMonthlyRent, formatMoney, listingOrigin, listingRentBasis, normalizeArea } from "./model";
+function isForSaleListing(listing) {
+    return listingRentBasis(listing) === "for-sale" || listing.listingType === "for-sale" || listing.listingType === "sale";
+}
 function clamp01(value) {
     return Math.min(1, Math.max(0, value));
 }
@@ -203,7 +206,7 @@ export function rankListings(listings, area, budget, priorities, modeOrOptions =
     const comparableGaps = notComparable.filter((listing) => listingRentBasis(listing) !== "for-sale");
     const excludedUnknownRent = comparableGaps.filter((listing) => listing.rent == null || listingRentBasis(listing) === "unknown").length;
     const excludedInapplicableRent = comparableGaps.length - excludedUnknownRent;
-    const eligibleListings = inArea.filter((listing) => withinBudget(listing, budget, mode));
+    const eligibleListings = inArea.filter((listing) => !isForSaleListing(listing) && withinBudget(listing, budget, mode));
     const weights = priorities.map((_, index) => priorities.length - index);
     const eligible = eligibleListings
         .map((listing) => {

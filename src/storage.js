@@ -95,6 +95,7 @@ function parseState(raw) {
                 groups: groups.groups,
                 activeGroupId: typeof record.activeGroupId === "string" ? record.activeGroupId : null,
                 activeMemberId: typeof record.activeMemberId === "string" ? record.activeMemberId : null,
+                realDataMode: record.realDataMode === true,
             },
             warning: groups.ok ? null : "Saved group data in this browser was unreadable, so group activity started fresh. Your saved search was kept.",
         };

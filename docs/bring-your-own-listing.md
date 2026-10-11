@@ -10,7 +10,7 @@ Users import one listing from screenshots, a public listing link, or manual entr
 4. Correct blanks and conflicts. Ambiguous dates and nonmonthly prices stay unknown unless you type a monthly value.
 5. Confirm, then save. A retry of the same save reuses one listing id.
 
-Saved cards are labeled **User-provided, unverified** and say whether they came from a link or screenshots. They join area and budget ranking. Room rent is not treated as whole-unit rent. Sample fixtures stay separate.
+Saved cards are labeled **User-provided, unverified** and say whether they came from a link or screenshots. They join area and budget ranking. Room rent is not treated as whole-unit rent. Once a saved or scraped listing is available, sample fixtures are excluded instead of mixed in.
 
 ## Database
 

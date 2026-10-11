@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { isSampleListing } from "./catalogSelection";
 import { LISTINGS } from "./fixtures";
 import {
     addNote,
@@ -43,7 +44,7 @@ const EMPTY_FILTERS = {
     sort: "score",
 };
 
-export function GroupDemo({ state, warning, route, listings = LISTINGS, onPatch, onReplaceGroup, onReset }) {
+export function GroupDemo({ state, warning, route, listings = LISTINGS, catalogMode = "sample", onPatch, onReplaceGroup, onReset }) {
     const group = state.groups.find((item) => item.id === (route.groupId || state.activeGroupId)) ?? null;
     const member = group?.members.find((item) => item.id === state.activeMemberId) ?? group?.members[0] ?? null;
     function replace(next, extra = {}) {
@@ -53,10 +54,10 @@ export function GroupDemo({ state, warning, route, listings = LISTINGS, onPatch,
         return <JoinScreen state={state} token={route.token} warning={warning} onPatch={onPatch} onReplaceGroup={replace}/>;
     if (!group || route.kind === "home")
         return <HomeScreen state={state} warning={warning} onPatch={onPatch} onReset={onReset}/>;
-    return (<Shell state={state} group={group} member={member} warning={warning} route={route.kind} onPatch={onPatch} onReplace={replace}>
-      {route.kind === "compare" ? <Compare listings={listings} group={group} member={member} priorities={state.priorities} onReplace={replace}/> : null}
+    return (<Shell state={state} group={group} member={member} warning={warning} route={route.kind} catalogMode={catalogMode} onPatch={onPatch} onReplace={replace}>
+      {route.kind === "compare" ? <Compare listings={listings} group={group} member={member} priorities={state.priorities} catalogMode={catalogMode} onReplace={replace}/> : null}
       {route.kind === "group" ? <GroupScreen group={group} member={member} onReplace={replace} onPatch={onPatch}/> : null}
-      {route.kind !== "compare" && route.kind !== "group" ? <Feed listings={listings} group={group} member={member} priorities={state.priorities} onReplace={replace}/> : null}
+      {route.kind !== "compare" && route.kind !== "group" ? <Feed listings={listings} group={group} member={member} priorities={state.priorities} catalogMode={catalogMode} onReplace={replace}/> : null}
     </Shell>);
 }
 
@@ -81,7 +82,7 @@ function HomeScreen({ state, warning, onPatch, onReset }) {
     }
     return (<section className="panel" aria-labelledby="home-heading">
       <h2 id="home-heading">Private group demo</h2>
-      <p className="help">Sample listings and group activity stay in this browser. Invite links do not open the group on another device. This is not an account and not a privacy guarantee.</p>
+      <p className="help">Group activity stays in this browser. Invite links do not open the group on another device. This is not an account and not a privacy guarantee.</p>
       {warning ? <p className="warning" role="status">{warning}</p> : null}
       <form onSubmit={create} noValidate>
         <div className="field">
@@ -147,7 +148,7 @@ function JoinScreen({ state, token, warning, onPatch }) {
     </section>);
 }
 
-function Shell({ state, group, member, warning, route, onPatch, onReplace, children }) {
+function Shell({ state, group, member, warning, route, catalogMode = "sample", onPatch, onReplace, children }) {
     const link = inviteHref(group.inviteToken);
     return (<div className="demo-app">
       <header className="top">
@@ -177,12 +178,12 @@ function Shell({ state, group, member, warning, route, onPatch, onReplace, child
         </button>
       </header>
       {warning ? <p className="warning" role="status">{warning}</p> : null}
-      <p className="help banner-copy">Sample listings. Group activity is simulated in this browser and is not indexed. Invite {link} works only where this group is already saved.</p>
+      <p className="help banner-copy" role="status">{catalogBanner(catalogMode)} Group activity stays in this browser and is not indexed. Invite {link} works only where this group is already saved.</p>
       {children}
     </div>);
 }
 
-function Feed({ listings, group, member, priorities, onReplace }) {
+function Feed({ listings, group, member, priorities, catalogMode = "sample", onReplace }) {
     const [draft, setDraft] = useState(EMPTY_FILTERS);
     const [errors, setErrors] = useState({});
     const [sheetOpen, setSheetOpen] = useState(false);
@@ -199,6 +200,8 @@ function Feed({ listings, group, member, priorities, onReplace }) {
         return sortListings(filterListings(listings, group, active), draft.sort, scoreOf);
     }, [group, draft, priorities, listings]);
     const shortlisted = group.shortlist.map((id) => listings.find((listing) => listing.id === id)).filter(Boolean);
+    const hiddenSaved = group.shortlist.length - shortlisted.length;
+    const sources = [...new Set(listings.map((listing) => listing.source).filter(Boolean))];
     const summary = shortlistSummary(shortlisted, scoreOf);
     const best = bestValueIds(Object.keys(validated.errors).length ? [] : filtered);
     function apply(event) {
@@ -237,7 +240,7 @@ function Feed({ listings, group, member, priorities, onReplace }) {
         <label>Source
           <select aria-label="Source" value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })}>
             <option value="any">Any</option>
-            <option value="Sample fixture">Sample fixture</option>
+            {sources.map((source) => <option key={source} value={source}>{source}</option>)}
           </select>
         </label>
         <label>Sort
@@ -256,15 +259,16 @@ function Feed({ listings, group, member, priorities, onReplace }) {
       {Object.entries(errors).map(([key, message]) => <p key={key} className="error" role="alert">{message}</p>)}
       <div className="layout">
         <div>
-          <p className="help" role="status">{Object.keys(validated.errors).length ? "Fix the filters to see results." : `${filtered.length} sample listing${filtered.length === 1 ? "" : "s"}`}</p>
-          {filtered.length === 0 && !Object.keys(validated.errors).length ? <p className="empty" role="status">No sample listings match. Clear filters to see the shortlist, which is kept separately.</p> : null}
+          <p className="help" role="status">{Object.keys(validated.errors).length ? "Fix the filters to see results." : catalogMode === "loading" ? "Checking listing sources." : `${filtered.length} listing${filtered.length === 1 ? "" : "s"}`}</p>
+          {catalogMode === "real" && hiddenSaved ? <p className="help" role="status">Saved sample references are hidden and are not counted. They were not converted into real listings.</p> : null}
+          {filtered.length === 0 && !Object.keys(validated.errors).length ? <p className="empty" role="status">{catalogMode === "sample" ? "No sample listings match. Clear filters to see the shortlist, which is kept separately." : "No listings match. Sample fixtures were not added. Clear filters to see the shortlist, which is kept separately."}</p> : null}
           <div className="feed">
             {filtered.map((listing) => <ListingCard key={listing.id} listing={listing} group={group} member={member} priorities={priorities} best={best.has(listing.id)} justAdded={justAdded === listing.id} onAdd={() => add(listing.id)} onRemove={() => onReplace(removeShortlist(group, listing.id))} onReplace={onReplace}/>)}
           </div>
         </div>
         <ShortlistRail groupId={group.id} summary={summary} listings={shortlisted} justAdded={justAdded} onRemove={(id) => onReplace(removeShortlist(group, id))} onDrop={add}/>
       </div>
-      <button ref={openRef} type="button" className="sheet-toggle" onClick={() => setSheetOpen(true)}>Shortlist {group.shortlist.length}</button>
+      <button ref={openRef} type="button" className="sheet-toggle" onClick={() => setSheetOpen(true)}>Shortlist {shortlisted.length}</button>
       {sheetOpen ? <div className="sheet" role="dialog" aria-label="Shortlist">
           <button ref={closeRef} type="button" onClick={() => { setSheetOpen(false); openRef.current?.focus(); }}>Close shortlist</button>
           <ShortlistBody summary={summary} listings={shortlisted} justAdded={justAdded} onRemove={(id) => onReplace(removeShortlist(group, id))}/>
@@ -302,9 +306,9 @@ function ListingCard({ listing, group, member, priorities, best, justAdded, onAd
         <h2>{listing.title}</h2>
         <p className="meta">{listing.neighborhood}, {listing.city} · Address: {factText(listing.address)}</p>
         <div className="facts">
-          <span className={best ? "fact good num" : "fact num"}>{listing.rent == null ? NOT_LISTED : formatMoney(listing.rent)}</span>
+          <span className={best ? "fact good num" : "fact num"}>{priceFact(listing)}</span>
           <span className="fact">{listing.beds == null ? `Bedrooms: ${NOT_LISTED}` : `${listing.beds} bed`}</span>
-          <span className="fact num">{listing.commuteMinutes == null ? `Commute: ${NOT_LISTED}` : `${listing.commuteMinutes} min sample`}</span>
+          <span className="fact num">{listing.commuteMinutes == null ? `Commute: ${NOT_LISTED}` : isSampleListing(listing) ? `${listing.commuteMinutes} min sample` : `${listing.commuteMinutes} min`}</span>
           <span className={listing.pets == null ? "fact miss" : "fact"}>Pets: {yesNoUnknown(listing.pets)}</span>
           <span className="fact">{listing.source ?? NOT_LISTED}</span>
           <Contact listing={listing} group={group} member={member} onReplace={onReplace}/>
@@ -359,7 +363,7 @@ function ShortlistBody({ summary, listings, justAdded, onRemove }) {
         <Stat label="Missing facts" value={String(summary.missing.length)} coverage="listing and field"/>
       </div>
       {listings.map((listing) => <div key={listing.id} className={listing.id === justAdded ? "pick pick-in" : "pick"}>
-          <div><strong>{listing.title}</strong><span className="num">{listing.rent == null ? NOT_LISTED : formatMoney(listing.rent)}</span></div>
+          <div><strong>{listing.title}</strong><span className="num">{priceFact(listing)}</span></div>
           <button type="button" onClick={() => onRemove(listing.id)}>Remove</button>
         </div>)}
       {summary.missing.length ? <ul className="missing">{summary.missing.map((fact) => <li key={`${fact.listingId}-${fact.label}`} className="miss">{fact.title}: {fact.label} {NOT_LISTED}</li>)}</ul> : <p className="help">No missing facts in the shortlist.</p>}
@@ -370,12 +374,13 @@ function Stat({ label, value, coverage }) {
     return <div className="stat"><b className="num">{value}</b><span>{label}</span><span className="help">{coverage}</span></div>;
 }
 
-function Compare({ listings, group, member, priorities, onReplace }) {
+function Compare({ listings, group, member, priorities, catalogMode = "sample", onReplace }) {
     const selected = group.shortlist.map((id) => listings.find((listing) => listing.id === id)).filter(Boolean);
+    const hiddenSaved = group.shortlist.length - selected.length;
     const [drafts, setDrafts] = useState({});
     const [error, setError] = useState("");
     if (!selected.length)
-        return <p className="empty" role="status">Shortlist a listing before comparing. The shortlist is empty.</p>;
+        return <p className="empty" role="status">{catalogMode !== "sample" && hiddenSaved ? "Saved sample references are hidden while real listings are in use. They were not converted into real listings." : "Shortlist a listing before comparing. The shortlist is empty."}</p>;
     function ask(listingId) {
         const result = addNote(group, listingId, member, drafts[listingId] ?? "", "question");
         if (result.error) {
@@ -399,7 +404,7 @@ function Compare({ listings, group, member, priorities, onReplace }) {
           <tbody>
             <tr>
               <th scope="row">Rent</th>
-              {selected.map((listing) => <td key={listing.id} className="num">{listing.rent == null ? NOT_LISTED : formatMoney(listing.rent)}</td>)}
+              {selected.map((listing) => <td key={listing.id} className="num">{priceFact(listing)}</td>)}
             </tr>
             <tr>
               <th scope="row">Per person</th>
@@ -416,7 +421,7 @@ function Compare({ listings, group, member, priorities, onReplace }) {
               <th scope="row">Commute</th>
               {selected.map((listing) => <td key={listing.id}>{group.members.map((person) => {
                 const minutes = memberCommute(listing, person);
-                return <span key={person.id} className="num">{person.name} {minutes == null ? NOT_LISTED : `${minutes} min sample`}. </span>;
+                return <span key={person.id} className="num">{person.name} {minutes == null ? NOT_LISTED : isSampleListing(listing) ? `${minutes} min sample` : `${minutes} min`}. </span>;
             })}</td>)}
             </tr>
             <tr>
@@ -573,6 +578,22 @@ function GroupScreen({ group, member, onReplace, onPatch }) {
     </div>);
 }
 
+function catalogBanner(catalogMode) {
+    if (catalogMode === "loading")
+        return "Checking saved and scraped listings. Sample fixtures are not shown as the result.";
+    if (catalogMode === "unavailable")
+        return "Real listings are unavailable. Sample fixtures were not substituted.";
+    if (catalogMode === "real")
+        return "Real listings only. Sample fixtures are not mixed in.";
+    return "Sample listings for the initial demo.";
+}
+function priceFact(listing) {
+    if (listing.rentBasis === "for-sale")
+        return `${listing.salePriceText || "Price unknown"} for sale. Not monthly rent.`;
+    if (listing.rent == null)
+        return NOT_LISTED;
+    return formatMoney(listing.rent);
+}
 function statusLabel(status) {
     if (status === "touring")
         return "Touring";
