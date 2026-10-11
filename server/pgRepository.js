@@ -175,6 +175,25 @@ export async function createPgRepository() {
         async getForGroup(listingId, groupId) {
             return withClient(pool, schema, async (client) => readListing(client, listingId, groupId));
         },
+        async updateImportLocation(input) {
+            return withClient(pool, schema, async (client) => {
+                const existing = await readListing(client, input.id, input.groupId);
+                if (!existing)
+                    return null;
+                const confidence = { ...(existing.fieldConfidence || {}), city: input.city };
+                if (input.location)
+                    confidence.location = input.location;
+                else
+                    delete confidence.location;
+                await client.query("UPDATE listings SET address = $1, field_confidence = $2::jsonb WHERE id = $3 AND group_id = $4", [
+                    input.address,
+                    JSON.stringify(confidence),
+                    input.id,
+                    input.groupId,
+                ]);
+                return readListing(client, input.id, input.groupId);
+            });
+        },
     };
 }
 
@@ -227,5 +246,6 @@ async function readListing(client, id, groupId) {
         status: item.status,
         amenities: attrs.rows.map((attr) => attr.name),
         fieldConfidence: item.field_confidence,
+        location: item.field_confidence?.location || null,
     };
 }

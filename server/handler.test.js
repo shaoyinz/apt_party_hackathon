@@ -150,6 +150,114 @@ describe("import handler", () => {
         expect(extracted.status).toBe(400);
         expect(extracted.body.error).toMatch(/8 MB/);
     });
+
+    it("saves a confirmed street location, retries in place, and hides it from another group", async () => {
+        const repository = createMemoryRepository();
+        const handler = await testHandler(repository, undefined, undefined, async () => ({
+            status: "ok",
+            place: { label: "18 Olive Ave, Sunnyvale", lat: 37.371, lon: -122.038, precision: "address" },
+            candidates: [],
+        }));
+        const home = await session(handler);
+        const other = await session(handler, "/api/session/test-peer");
+        const extracted = await call(handler, "POST", "/api/imports/extract", home.cookie, {
+            images: [{ name: "shot.png", type: "image/png", dataBase64: PNG }],
+        });
+        expect(extracted.body.source).toBe("upload");
+        const payload = {
+            draftId: extracted.body.draftId,
+            idempotencyKey: "geo-key-1",
+            confirmed: true,
+            fields: { ...extracted.body.fields, address: "18 Olive Ave", city: "Sunnyvale", title: "Olive" },
+            location: { query: "18 Olive Ave, Sunnyvale", lat: 37.371, lon: -122.038, label: "18 Olive Ave, Sunnyvale", precision: "address" },
+        };
+        const saved = await call(handler, "POST", "/api/imports/confirm", home.cookie, payload);
+        const retried = await call(handler, "POST", "/api/imports/confirm", home.cookie, payload);
+        expect(saved.body.created).toBe(true);
+        expect(saved.body.listings[0].location).toMatchObject({ precision: "address", source: "OpenStreetMap via Nominatim", query: "18 Olive Ave, Sunnyvale" });
+        expect(retried.body.created).toBe(false);
+        expect(retried.body.listings).toHaveLength(1);
+        const hidden = await call(handler, "POST", `/api/imports/saved/${saved.body.id}/location`, other.cookie, {
+            address: "18 Olive Ave",
+            city: "Sunnyvale",
+            location: payload.location,
+        });
+        expect(hidden.status).toBe(404);
+    });
+
+    it("rejects an unconfirmed city center, keeps a failed geocode saveable, and updates a legacy listing in place", async () => {
+        const repository = createMemoryRepository();
+        let mode = "city";
+        const handler = await testHandler(repository, undefined, undefined, async () => {
+            if (mode === "fail")
+                throw new Error("nominatim down");
+            if (mode === "ambiguous") {
+                return {
+                    status: "ambiguous",
+                    candidates: [
+                        { label: "18 Olive Ave", lat: 37.371, lon: -122.038, precision: "address" },
+                        { label: "180 Olive Ave", lat: 37.39, lon: -122.05, precision: "address" },
+                    ],
+                    place: null,
+                };
+            }
+            if (mode === "street") {
+                return { status: "ok", place: { label: "19 Olive Ave", lat: 37.372, lon: -122.039, precision: "address" }, candidates: [] };
+            }
+            return { status: "approximate", place: { label: "Sunnyvale", lat: 37.3688, lon: -122.0363, precision: "city" }, candidates: [], message: "city center" };
+        });
+        const home = await session(handler);
+        const extracted = await call(handler, "POST", "/api/imports/extract", home.cookie, { url: "https://listing.example/unit" });
+        const fields = { ...extracted.body.fields, address: "Olive Ave", city: "Sunnyvale", title: "Olive" };
+        const cityAttempt = await call(handler, "POST", "/api/imports/confirm", home.cookie, {
+            draftId: extracted.body.draftId,
+            idempotencyKey: "geo-key-2",
+            confirmed: true,
+            fields,
+            sourceUrl: extracted.body.sourceUrl,
+            location: { query: "Olive Ave, Sunnyvale", lat: 37.3688, lon: -122.0363, precision: "city" },
+        });
+        expect(cityAttempt.status).toBe(400);
+        expect((await call(handler, "GET", "/api/imports/saved", home.cookie)).body.listings).toEqual([]);
+        mode = "fail";
+        const failed = await call(handler, "POST", "/api/imports/confirm", home.cookie, {
+            draftId: extracted.body.draftId,
+            idempotencyKey: "geo-key-2",
+            confirmed: true,
+            fields,
+            sourceUrl: extracted.body.sourceUrl,
+            location: { query: "Olive Ave, Sunnyvale", lat: 37.3688, lon: -122.0363, precision: "city", confirmedApproximate: true },
+        });
+        expect(failed.status).toBe(200);
+        expect(failed.body.locationStatus).toBe("provider_failure");
+        expect(failed.body.listings).toHaveLength(1);
+        expect(failed.body.listings[0].location).toBeNull();
+        mode = "ambiguous";
+        const ambiguous = await call(handler, "POST", `/api/imports/saved/${failed.body.id}/location`, home.cookie, {
+            address: "Olive Ave",
+            city: "Sunnyvale",
+            location: { query: "Olive Ave, Sunnyvale", lat: 1, lon: 1, precision: "address" },
+        });
+        expect(ambiguous.status).toBe(400);
+        expect((await call(handler, "GET", "/api/imports/saved", home.cookie)).body.listings).toHaveLength(1);
+        mode = "street";
+        const updated = await call(handler, "POST", `/api/imports/saved/${failed.body.id}/location`, home.cookie, {
+            address: "19 Olive Ave",
+            city: "Sunnyvale",
+            location: { query: "19 Olive Ave, Sunnyvale", lat: 37.372, lon: -122.039, precision: "address" },
+        });
+        expect(updated.status).toBe(200);
+        expect(updated.body.listings).toHaveLength(1);
+        expect(updated.body.listings[0].address).toBe("19 Olive Ave");
+        expect(updated.body.listings[0].location.precision).toBe("address");
+        const stale = await call(handler, "POST", `/api/imports/saved/${failed.body.id}/location`, home.cookie, {
+            address: "20 Olive Ave",
+            city: "Sunnyvale",
+            location: { query: "19 Olive Ave, Sunnyvale", lat: 37.372, lon: -122.039, precision: "address" },
+        });
+        expect(stale.status).toBe(400);
+        expect((await call(handler, "GET", "/api/imports/saved", home.cookie)).body.listings[0].address).toBe("19 Olive Ave");
+    });
 });
 
 describe("strict health", () => {
@@ -201,7 +309,7 @@ function restoreEnv(name, value) {
         process.env[name] = value;
 }
 
-async function testHandler(repository, fetchPage, ocrStatus) {
+async function testHandler(repository, fetchPage, ocrStatus, geocodeListing) {
     root = await mkdtemp(path.join(tmpdir(), "roost-import-"));
     return createHandler({
         repository,
@@ -215,6 +323,7 @@ async function testHandler(repository, fetchPage, ocrStatus) {
             body: "<title>Olive import</title><p>18 Olive Ave, Sunnyvale, CA. Entire apartment. $2,400/month. 1 bed. 1 bath. Available March 1, 2026.</p>",
         })),
         ocrStatus: ocrStatus || (async () => ({ available: false })),
+        geocodeListing,
     });
 }
 

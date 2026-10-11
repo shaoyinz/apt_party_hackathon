@@ -51,6 +51,14 @@ export function confirmImport(payload) {
     });
 }
 
+export function saveListingLocation(listingId, payload) {
+    return request(`/api/imports/saved/${encodeURIComponent(listingId)}/location`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
 export function cancelImport(draftId) {
     if (!draftId)
         return Promise.resolve();

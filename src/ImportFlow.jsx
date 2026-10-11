@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { cancelImport, confirmImport, extractImport, loadHealth } from "./importApi";
 import { UPLOAD_LIMITS, UPLOAD_LIMIT_LABEL, FETCH_LIMIT_LABEL } from "./import/limits";
+import { ListingLocationEditor } from "./ListingLocation";
+import { confirmedLocationPayload, listingGeocodeQuery } from "./location/listingGeo";
 
 const AMENITIES = [
     "In-unit laundry", "On-site laundry", "Air conditioning", "Heating", "Dishwasher", "Balcony",
@@ -21,6 +23,8 @@ export function ImportFlow({ onSaved, identity }) {
     const [attributes, setAttributes] = useState([]);
     const [confirmed, setConfirmed] = useState(false);
     const [idempotencyKey, setIdempotencyKey] = useState("");
+    const [locationPayload, setLocationPayload] = useState(null);
+    const [skipLocation, setSkipLocation] = useState(false);
     function reset() {
         setUrl("");
         setFiles([]);
@@ -32,6 +36,8 @@ export function ImportFlow({ onSaved, identity }) {
         setAttributes([]);
         setConfirmed(false);
         setIdempotencyKey("");
+        setLocationPayload(null);
+        setSkipLocation(false);
     }
     useEffect(() => {
         let cancelled = false;
@@ -87,6 +93,8 @@ export function ImportFlow({ onSaved, identity }) {
             setAttributes(result.attributes || []);
             setConfirmed(false);
             setIdempotencyKey(newId());
+            setLocationPayload(null);
+            setSkipLocation(false);
             setStatus(result.warnings?.[0] || "Review every fact before saving. Confirmation does not verify availability.");
             setPhase("review");
         }
@@ -108,8 +116,11 @@ export function ImportFlow({ onSaved, identity }) {
                 conflicts: draft?.conflicts || [],
                 sourceUrl: draft?.sourceUrl || url.trim(),
                 rawText: draft?.rawText || "",
+                location: skipLocation ? undefined : confirmedLocationPayload(listingGeocodeQuery(fields.address, fields.city), locationPayload),
             });
-            setStatus("Saved. This listing is user-provided and unverified.");
+            setStatus(result.locationStatus === "provider_failure"
+                ? "Saved without a location. Geocoding failed, so commute and convenience stay unavailable. Retry from saved listings."
+                : "Saved. This listing is user-provided and unverified.");
             setPhase("saved");
             onSaved(result.listings || []);
         }
@@ -127,7 +138,7 @@ export function ImportFlow({ onSaved, identity }) {
         <h2 id="byo-heading">Bring your own listing</h2>
         <button type="button" onClick={cancel}>Clear</button>
       </div>
-      <p className="help">One listing at a time, shared with people who join this page. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
+      <p className="help">One listing at a time, shared with people who join this page. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}. Resolving a location sends the confirmed address and city to OpenStreetMap geocoding. Provider credentials stay on the server.</p>
       {identity ? <p className="local-note">Saving as {identity.name}. User id {identity.userId}.</p> : <p className="warning" role="status">Create your saved-listings page, or join one with an invite code, before adding a listing.</p>}
       {health?.database !== "ok" ? (<p className="warning" role="status">Database save is not available yet{health?.databaseReason ? `: ${health.databaseReason}` : ""}. You can still prepare a draft.</p>) : null}
       {health?.ocr === "unavailable" ? (<p className="warning" role="status">Python OCR is not installed. Run npm run py:sync, or type the facts. Screenshots can still be stored.</p>) : null}
@@ -154,11 +165,11 @@ export function ImportFlow({ onSaved, identity }) {
             <button type="button" disabled={phase === "working"} onClick={() => runExtract(true)}>Enter manually</button>
           </div>
         </div>) : null}
-      {identity && (phase === "review" || phase === "saved") ? (<Review fields={fields} setFields={setFields} attributes={attributes} setAttributes={setAttributes} notes={draft?.notes || {}} conflicts={draft?.conflicts || []} previews={previews} url={draft?.sourceUrl || url} confirmed={confirmed} setConfirmed={setConfirmed} onSave={save} onCancel={cancel} busy={phase === "working"} saved={phase === "saved"}/>) : null}
+      {identity && (phase === "review" || phase === "saved") ? (<Review fields={fields} setFields={setFields} attributes={attributes} setAttributes={setAttributes} notes={draft?.notes || {}} conflicts={draft?.conflicts || []} previews={previews} url={draft?.sourceUrl || url} confirmed={confirmed} setConfirmed={setConfirmed} onSave={save} onCancel={cancel} busy={phase === "working"} saved={phase === "saved"} skipLocation={skipLocation} setSkipLocation={setSkipLocation} onResolved={setLocationPayload}/>) : null}
     </section>);
 }
 
-function Review({ fields, setFields, attributes, setAttributes, notes, conflicts, previews, url, confirmed, setConfirmed, onSave, onCancel, busy, saved }) {
+function Review({ fields, setFields, attributes, setAttributes, notes, conflicts, previews, url, confirmed, setConfirmed, onSave, onCancel, busy, saved, skipLocation, setSkipLocation, onResolved }) {
     function set(key, value) {
         setFields((current) => ({ ...current, [key]: value }));
     }
@@ -211,6 +222,11 @@ function Review({ fields, setFields, attributes, setAttributes, notes, conflicts
             </label>))}
         </div>
       </fieldset>
+      <ListingLocationEditor address={fields.address} city={fields.city} onResolved={onResolved}/>
+      <label className="choice">
+        <input type="checkbox" checked={skipLocation} onChange={(event) => setSkipLocation(event.target.checked)}/>
+        Save without a resolved location. Commute and convenience stay unavailable.
+      </label>
       <label className="choice">
         <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)}/>
         I reviewed this draft. Saving does not mean the listing is independently verified.
