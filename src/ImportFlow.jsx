@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cancelImport, confirmImport, extractImport, loadHealth } from "./importApi";
 import { UPLOAD_LIMITS, UPLOAD_LIMIT_LABEL, FETCH_LIMIT_LABEL } from "./import/limits";
 
@@ -8,8 +8,7 @@ const AMENITIES = [
     "Internet included", "Covered parking", "EV charging",
 ];
 
-export function ImportFlow({ onClose, onSaved, identity }) {
-    const panelRef = useRef(null);
+export function ImportFlow({ onSaved, identity }) {
     const [health, setHealth] = useState(null);
     const [sessionError, setSessionError] = useState("");
     const [url, setUrl] = useState("");
@@ -22,9 +21,18 @@ export function ImportFlow({ onClose, onSaved, identity }) {
     const [attributes, setAttributes] = useState([]);
     const [confirmed, setConfirmed] = useState(false);
     const [idempotencyKey, setIdempotencyKey] = useState("");
-    useEffect(() => {
-        panelRef.current?.scrollIntoView({ block: "start" });
-    }, []);
+    function reset() {
+        setUrl("");
+        setFiles([]);
+        setFileError("");
+        setPhase("input");
+        setStatus("");
+        setDraft(null);
+        setFields(emptyDraft());
+        setAttributes([]);
+        setConfirmed(false);
+        setIdempotencyKey("");
+    }
     useEffect(() => {
         let cancelled = false;
         loadHealth()
@@ -112,12 +120,12 @@ export function ImportFlow({ onClose, onSaved, identity }) {
     }
     async function cancel() {
         await cancelImport(draft?.draftId).catch(() => undefined);
-        onClose();
+        reset();
     }
-    return (<section className="panel" aria-labelledby="byo-heading" ref={panelRef}>
+    return (<section className="panel" aria-labelledby="byo-heading">
       <div className="results-head">
         <h2 id="byo-heading">Bring your own listing</h2>
-        <button type="button" onClick={cancel}>Close</button>
+        <button type="button" onClick={cancel}>Clear</button>
       </div>
       <p className="help">One listing at a time, shared with people who join this page. {UPLOAD_LIMIT_LABEL} Links: {FETCH_LIMIT_LABEL}.</p>
       {identity ? <p className="local-note">Saving as {identity.name}. User id {identity.userId}.</p> : <p className="warning" role="status">Create your saved-listings page, or join one with an invite code, before adding a listing.</p>}

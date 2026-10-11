@@ -23,7 +23,6 @@ const [catalog, setCatalog] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [demoListings, setDemoListings] = useState(FALLBACK_LISTINGS);
     const [dataStatus, setDataStatus] = useState("loading");
-    const [importOpen, setImportOpen] = useState(false);
     const [userListings, setUserListings] = useState([]);
     const [redfinListings, setRedfinListings] = useState([]);
     const [redfinNote, setRedfinNote] = useState("");
@@ -254,10 +253,9 @@ const imported = catalog?.listings ?? [];
         to the team unless you share an export yourself.
       </p>
       {groupView ? null : <ImportPanel catalog={catalog} catalogError={catalogError} refreshing={refreshing} onRefresh={() => void refreshImport()}/>}
-      {groupView || !importOpen ? null : (<ImportFlow identity={identity} onClose={() => setImportOpen(false)} onSaved={(rows) => {
+      {groupView ? null : <ImportFlow identity={identity} onSaved={(rows) => {
             setUserListings((rows || []).map(toSearchListing));
-            setImportOpen(false);
-        }}/>)}
+        }}/>}
       {groupView ? null : <SavedPage identity={identity} error={pageError} onCreate={(name) => {
             setPageError("");
             createSavedPage(name).then((next) => applySavedPage(next)).catch((error) => setPageError(error.message));
@@ -271,7 +269,7 @@ const imported = catalog?.listings ?? [];
 
       {groupView ? <div className="demo-app" data-theme={state.theme === "dark" ? "dark" : "light"}>
         <GroupDemo state={state} warning={warning} route={route} listings={listings} onPatch={update} onReplaceGroup={replaceGroup} onReset={reset}/>
-      </div> : importOpen ? null : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit} onImport={() => setImportOpen(true)}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} redfinListings={redfinListings} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset} onImport={() => setImportOpen(true)}/>)}
+      </div> : state.view === "setup" ? (<SearchForm state={state} errors={submitted ? errors : {}} onArea={(area) => update({ area })} onMode={(mode) => update({ mode })} onHousehold={(householdSize) => update({ householdSize })} onBudget={(budgetText) => update({ budgetText })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onAdd={(id) => update({ priorities: [...state.priorities, id] })} onRemove={(id) => update({ priorities: state.priorities.filter((item) => item !== id) })} onMove={movePriority} onSubmit={onSubmit}/>) : (<Results state={state} location={location} outcomeEligible={outcome.eligible} areaKnown={outcome.areaKnown} excludedUnknownRent={outcome.excludedUnknownRent} excludedInapplicableRent={outcome.excludedInapplicableRent} redfinListings={redfinListings} redfinNote={redfinNote} budget={budget} outside={outside} titles={titles} listings={listings} catalog={catalog} catalogError={catalogError} onEdit={() => update({ view: "setup" })} onDestination={(destination) => update({ destination, confirmedDestination: null })} onSelectPlace={confirmPlace} onTravelMode={(travelMode) => update({ travelMode })} onDeparture={(transitDeparture) => update({ transitDeparture })} onToggle={toggleUseful} onNote={setNote} onReset={reset}/>)}
 
       {groupView ? null : <FeedbackPanel state={state} exported={exported} onFeedback={(generalFeedback) => update({ generalFeedback })} onReset={reset} showReset={state.view === "setup"}/>}
       <p className="attribution">
@@ -320,7 +318,7 @@ function SavedPage({ identity, error, onCreate, onJoin }) {
       {error ? <p className="error" role="alert">{error}</p> : null}
     </section>);
 }
-function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, onImport, }) {
+function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDestination, onSelectPlace, onTravelMode, onDeparture, onAdd, onRemove, onMove, onSubmit, }) {
     const available = PRIORITY_IDS.filter((id) => !state.priorities.includes(id));
     return (<form className="panel" onSubmit={onSubmit} noValidate>
       <h2>Describe your search</h2>
@@ -419,7 +417,6 @@ function SearchForm({ state, errors, onArea, onMode, onHousehold, onBudget, onDe
         <button className="primary" type="submit">
           View matches
         </button>
-        <button type="button" onClick={onImport}>Bring your own listing</button>
       </div>
     </form>);
 }
@@ -513,7 +510,7 @@ function DestinationField({ value, onChange, onSelect }) {
       {note ? <p className="error" role="status">{note}</p> : null}
     </div>);
 }
-function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, redfinListings, redfinNote, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, onImport, }) {
+function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownRent, excludedInapplicableRent, redfinListings, redfinNote, budget, outside, titles, listings, catalog, catalogError, onEdit, onDestination, onSelectPlace, onTravelMode, onDeparture, onToggle, onNote, onReset, }) {
     const parsed = parseBudget(state.budgetText);
     const unlocated = listings.filter((listing) => listingOrigin(listing) === "imported" && !listing.city && !listing.neighborhood);
     const liveFailed = Boolean(catalogError || catalog?.errorCode);
@@ -524,7 +521,6 @@ function Results({ state, location, outcomeEligible, areaKnown, excludedUnknownR
           <button type="button" className="primary" onClick={onEdit}>
             Edit search
           </button>
-<button type="button" onClick={onImport}>Bring your own listing</button>
           <button type="button" onClick={onReset}>
             Reset
           </button>
