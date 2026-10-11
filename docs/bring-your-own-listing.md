@@ -4,7 +4,7 @@ Users import one listing from screenshots, a public listing link, or manual entr
 
 ## Flow
 
-1. Choose **Bring your own listing**.
+1. Use the **Bring your own listing** form between Craigslist import and Your saved-listings page. It stays on the page.
 2. Paste an `http` or `https` URL and/or add screenshots. Limits are shown in the form: JPEG, PNG, WEBP, GIF; 8 images; 8 MB each; 24 MB total.
 3. Extract, or enter facts manually. Nothing is written to `listings` before **Save listing**.
 4. Correct blanks and conflicts. Ambiguous dates and nonmonthly prices stay unknown unless you type a monthly value.
